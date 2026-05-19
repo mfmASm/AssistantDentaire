@@ -56,7 +56,7 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Bonjour Dr. Bennani 👋"
+        title="Bonjour Dr. M'gassy 👋"
         description="Voici ce qui demande votre attention aujourd'hui — lundi 18 mai 2026."
         actions={
           <>

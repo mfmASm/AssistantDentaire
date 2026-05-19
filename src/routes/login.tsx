@@ -42,7 +42,7 @@ function LoginPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" defaultValue="dr.bennani@cabinet-atlas.ma" required />
+              <Input id="email" type="email" defaultValue="dr.mgassy@cabinet-atlas.ma" required />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
