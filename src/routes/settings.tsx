@@ -51,7 +51,7 @@ function SettingsPage() {
             </div>
             <div className="grid gap-2">
               <Label>Dentiste principal</Label>
-              <Input defaultValue="Dr. Reda Bennani" />
+              <Input defaultValue="Dr. Safaa M'gassy" />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
@@ -65,7 +65,7 @@ function SettingsPage() {
             </div>
             <div className="grid gap-2">
               <Label>Lien Google Reviews</Label>
-              <Input defaultValue="https://g.page/r/cabinet-atlas-casablanca/review" />
+              <Input defaultValue="https://g.page/r/cabinet-mgassy-casablanca/review" />
             </div>
             <div className="grid gap-2">
               <Label>Adresse</Label>

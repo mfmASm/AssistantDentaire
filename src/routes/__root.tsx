@@ -106,7 +106,7 @@ function AppShell() {
               </Button>
               <div className="hidden sm:flex h-8 items-center gap-2 rounded-full border bg-card pl-1 pr-3">
                 <div className="flex size-6 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">DR</div>
-                <span className="text-xs font-medium">Dr. Bennani</span>
+                <span className="text-xs font-medium">Dr. M'gassy</span>
               </div>
             </div>
           </header>

@@ -101,8 +101,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col leading-tight">
-              <span className="text-xs font-medium">Dr. Reda Bennani</span>
-              <span className="text-[11px] text-muted-foreground">Chirurgien-dentiste</span>
+              <span className="text-xs font-medium">Dr. Safaa M'gassy</span>
+              <span className="text-[11px] text-muted-foreground">Chirurgienne-dentiste</span>
             </div>
           )}
         </div>
