@@ -6,8 +6,6 @@ import {
   BellRing,
   Star,
   CalendarDays,
-  FileText,
-  ClipboardPlus,
   Settings,
   Stethoscope,
 } from "lucide-react";
@@ -33,8 +31,6 @@ const nav = [
   { title: "Paiements", url: "/payments", icon: Wallet },
   { title: "Rappels", url: "/recalls", icon: BellRing },
   { title: "Avis Google", url: "/reviews", icon: Star },
-  { title: "Ordonnances", url: "/ordonnances", icon: ClipboardPlus },
-  { title: "Certificats médicaux", url: "/certificats-medicaux", icon: FileText },
 ];
 
 const secondary = [{ title: "Paramètres", url: "/settings", icon: Settings }];
