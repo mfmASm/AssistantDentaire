@@ -80,41 +80,41 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/appointments': typeof AppointmentsRoute
-  '/certificats-medicaux': typeof CertificatsMedicauxRoute
   '/login': typeof LoginRoute
-  '/ordonnances': typeof OrdonnancesRoute
   '/patients': typeof PatientsRoute
+  '/ordonnances': typeof OrdonnancesRoute
   '/payments': typeof PaymentsRoute
   '/recalls': typeof RecallsRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
+  '/certificats-medicaux': typeof CertificatsMedicauxRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/appointments': typeof AppointmentsRoute
-  '/certificats-medicaux': typeof CertificatsMedicauxRoute
   '/login': typeof LoginRoute
-  '/ordonnances': typeof OrdonnancesRoute
   '/patients': typeof PatientsRoute
+  '/ordonnances': typeof OrdonnancesRoute
   '/payments': typeof PaymentsRoute
   '/recalls': typeof RecallsRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
+  '/certificats-medicaux': typeof CertificatsMedicauxRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/appointments': typeof AppointmentsRoute
-  '/certificats-medicaux': typeof CertificatsMedicauxRoute
   '/login': typeof LoginRoute
-  '/ordonnances': typeof OrdonnancesRoute
   '/patients': typeof PatientsRoute
+  '/ordonnances': typeof OrdonnancesRoute
   '/payments': typeof PaymentsRoute
   '/recalls': typeof RecallsRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
+  '/certificats-medicaux': typeof CertificatsMedicauxRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
 }
 export interface FileRouteTypes {
@@ -122,54 +122,54 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/appointments'
-    | '/certificats-medicaux'
     | '/login'
-    | '/ordonnances'
     | '/patients'
+    | '/ordonnances'
     | '/payments'
     | '/recalls'
     | '/reviews'
     | '/settings'
+    | '/certificats-medicaux'
     | '/sitemap.xml'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/appointments'
-    | '/certificats-medicaux'
     | '/login'
-    | '/ordonnances'
     | '/patients'
+    | '/ordonnances'
     | '/payments'
     | '/recalls'
     | '/reviews'
     | '/settings'
+    | '/certificats-medicaux'
     | '/sitemap.xml'
   id:
     | '__root__'
     | '/'
     | '/appointments'
-    | '/certificats-medicaux'
     | '/login'
-    | '/ordonnances'
     | '/patients'
+    | '/ordonnances'
     | '/payments'
     | '/recalls'
     | '/reviews'
     | '/settings'
+    | '/certificats-medicaux'
     | '/sitemap.xml'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppointmentsRoute: typeof AppointmentsRoute
-  CertificatsMedicauxRoute: typeof CertificatsMedicauxRoute
   LoginRoute: typeof LoginRoute
-  OrdonnancesRoute: typeof OrdonnancesRoute
   PatientsRoute: typeof PatientsRoute
+  OrdonnancesRoute: typeof OrdonnancesRoute
   PaymentsRoute: typeof PaymentsRoute
   RecallsRoute: typeof RecallsRoute
   ReviewsRoute: typeof ReviewsRoute
   SettingsRoute: typeof SettingsRoute
+  CertificatsMedicauxRoute: typeof CertificatsMedicauxRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
 }
 
@@ -271,13 +271,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
