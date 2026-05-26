@@ -28,9 +28,27 @@ function LoginPage() {
   const loginButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    authApi.session().then((session) => {
-      if (session?.access_token) navigate({ to: "/" });
-    });
+    let active = true;
+
+    authApi.session()
+      .then(async (session) => {
+        console.log("Login route session exists", session?.access_token ? "yes" : "no");
+        if (!session?.access_token) return;
+        try {
+          await authApi.ensureOnboarded();
+          if (active) navigate({ to: "/" });
+        } catch (error) {
+          console.error(error);
+          await authApi.logout();
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [navigate]);
 
   const onSubmit = async (e: FormEvent) => {
@@ -110,7 +128,7 @@ function LoginPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="votre@email.com" />
+              <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="votre@email.com" />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -123,6 +141,7 @@ function LoginPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Votre mot de passe"

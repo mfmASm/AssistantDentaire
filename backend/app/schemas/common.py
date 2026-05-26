@@ -56,6 +56,7 @@ class PaymentIn(ApiModel):
     treatment: str | None = None
     total_amount: Decimal = Field(default=0, ge=0)
     paid_amount: Decimal = Field(default=0, ge=0)
+    remaining_amount: Decimal | None = Field(default=None, ge=0)
     status: str = "Impayé"
     due_date: date | None = None
     notes: str | None = None
@@ -70,6 +71,17 @@ class PaymentIn(ApiModel):
         data = super().model_dump(**kwargs)
         data["remaining_amount"] = data["total_amount"] - data["paid_amount"]
         return data
+
+
+class PaymentUpdate(ApiModel):
+    patient_id: UUID | None = None
+    treatment: str | None = None
+    total_amount: Decimal | None = Field(default=None, ge=0)
+    paid_amount: Decimal | None = Field(default=None, ge=0)
+    remaining_amount: Decimal | None = Field(default=None, ge=0)
+    status: str | None = None
+    due_date: date | None = None
+    notes: str | None = None
 
 
 class RecallIn(ApiModel):

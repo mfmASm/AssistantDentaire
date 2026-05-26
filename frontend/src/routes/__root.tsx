@@ -104,35 +104,55 @@ function AppShell() {
   const notifications = useMemo(() => getNotifications(), []);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
+
+  useEffect(() => {
+    console.log("Root route rendered");
+  }, []);
 
   useEffect(() => {
     let active = true;
 
     const checkAuth = async () => {
-      const session = await authApi.session();
-
-      if (isAuthPage) {
-        if (session?.access_token) router.navigate({ to: "/" });
-        return;
-      }
-
-      if (isPublicPage) {
-        if (active) setIsAuthorized(true);
-        return;
-      }
-
-      if (!session?.access_token) {
-        if (active) setIsAuthorized(false);
-        router.navigate({ to: "/login" });
-        return;
-      }
-
+      if (active) setIsCheckingAuth(true);
       try {
+        const session = await authApi.session();
+        console.log("Current pathname", pathname);
+        console.log("Is login route", isAuthPage);
+        console.log("Session exists", session?.access_token ? "yes" : "no");
+
+        if (isAuthPage) {
+          if (active) {
+            setIsAuthorized(true);
+            setIsCheckingAuth(false);
+          }
+          return;
+        }
+
+        if (isPublicPage) {
+          if (active) {
+            setIsAuthorized(true);
+            setIsCheckingAuth(false);
+          }
+          return;
+        }
+
+        if (!session?.access_token) {
+          if (active) {
+            setCurrentUser(null);
+            setIsAuthorized(false);
+            setIsCheckingAuth(false);
+          }
+          router.navigate({ to: "/login" });
+          return;
+        }
+
         const user = await authApi.ensureOnboarded();
         if (active) {
           setCurrentUser(user);
           setIsAuthorized(true);
+          setIsCheckingAuth(false);
         }
       } catch (error) {
         console.error(error);
@@ -140,8 +160,9 @@ function AppShell() {
         if (active) {
           setCurrentUser(null);
           setIsAuthorized(false);
+          setIsCheckingAuth(false);
         }
-        router.navigate({ to: "/login" });
+        if (!isAuthPage) router.navigate({ to: "/login" });
       }
     };
 
@@ -151,6 +172,10 @@ function AppShell() {
       active = false;
     };
   }, [isAuthPage, isPublicPage, pathname, router]);
+
+  useEffect(() => {
+    console.log("Auth loading state", isCheckingAuth);
+  }, [isCheckingAuth]);
 
   useEffect(() => {
     try {
@@ -190,7 +215,8 @@ function AppShell() {
   const roleLabel = getRoleLabel(currentUser?.role);
 
   if (isAuthPage) return <Outlet />;
-  if (!isPublicPage && !isAuthorized) return null;
+  if (!isPublicPage && isCheckingAuth) return <div className="p-6 text-sm text-muted-foreground">Chargement...</div>;
+  if (!isPublicPage && !isAuthorized) return <div className="p-6 text-sm text-muted-foreground">Chargement...</div>;
 
   return (
     <SidebarProvider>
@@ -335,6 +361,10 @@ function NotificationRow({ notification, isRead }: { notification: AppNotificati
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => {
+    console.log("App mounted");
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={150}>

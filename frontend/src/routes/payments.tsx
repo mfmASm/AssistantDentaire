@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Plus, MessageCircle, Wallet, TrendingUp, AlertCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,10 +14,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { StatusBadge, paymentTone, paymentLabel } from "@/components/status-badge";
-import { payments, patients, formatMAD, formatDate, type Payment, type PaymentStatus } from "@/lib/demo-data";
+import { StatusBadge } from "@/components/status-badge";
+import { formatMAD, formatDate } from "@/lib/demo-data";
 import { todayISO, formatShortDate } from "@/lib/date-utils";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { patientsApi, toUiPatient, type PatientRecord } from "@/services/patientsApi";
+import { paymentsApi, type ApiPayment, type PaymentPayload } from "@/services/paymentsApi";
+import { whatsappApi } from "@/services/whatsappApi";
+
+type PaymentStatus = "paid" | "partial" | "unpaid" | "overdue";
+
+type PaymentRow = {
+  id: string;
+  patientId: string;
+  patient: string;
+  phone: string;
+  treatment: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  dueDate: string;
+  status: PaymentStatus;
+  installments?: number;
+  notes?: string;
+};
 
 const treatmentPrices = [
   { value: "Consultation + radio", price: 400 },
@@ -43,12 +63,15 @@ export const Route = createFileRoute("/payments")({
 });
 
 function PaymentsPage() {
-  const [rows, setRows] = useState<Payment[]>(payments);
+  const [rows, setRows] = useState<PaymentRow[]>([]);
+  const [patientRows, setPatientRows] = useState<PatientRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState({
-    patient: "",
+    patientId: "",
     treatment: "",
     total: "",
     paid: "",
@@ -59,61 +82,156 @@ function PaymentsPage() {
     notes: "",
   });
 
+  const patientsById = useMemo(() => new Map(patientRows.map((patient) => [patient.id, patient])), [patientRows]);
+
+  const toPaymentRow = (payment: ApiPayment): PaymentRow => {
+    const patient = patientsById.get(payment.patient_id);
+    const total = toAmount(payment.total_amount);
+    const paid = toAmount(payment.paid_amount);
+    const remaining = payment.remaining_amount == null ? Math.max(total - paid, 0) : toAmount(payment.remaining_amount);
+    const dueDate = payment.due_date || todayISO();
+    const status = toUiPaymentStatus(payment.status, dueDate);
+    return {
+      id: payment.id,
+      patientId: payment.patient_id,
+      patient: payment.patients?.full_name || patient?.name || "Patient inconnu",
+      phone: payment.patients?.phone || patient?.phone || "",
+      treatment: payment.treatment || "-",
+      total,
+      paid,
+      remaining,
+      dueDate,
+      status,
+      installments: extractInstallments(payment.notes),
+      notes: payment.notes || undefined,
+    };
+  };
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const patients = await patientsApi.list();
+      const uiPatients = patients.map(toUiPatient);
+      setPatientRows(uiPatients);
+      const patientMap = new Map(uiPatients.map((patient) => [patient.id, patient]));
+      const paymentRows = (await paymentsApi.getPayments()).map((payment) => {
+        const patient = patientMap.get(payment.patient_id);
+        const total = toAmount(payment.total_amount);
+        const paid = toAmount(payment.paid_amount);
+        const remaining = payment.remaining_amount == null ? Math.max(total - paid, 0) : toAmount(payment.remaining_amount);
+        const dueDate = payment.due_date || todayISO();
+        return {
+          id: payment.id,
+          patientId: payment.patient_id,
+          patient: payment.patients?.full_name || patient?.name || "Patient inconnu",
+          phone: payment.patients?.phone || patient?.phone || "",
+          treatment: payment.treatment || "-",
+          total,
+          paid,
+          remaining,
+          dueDate,
+          status: toUiPaymentStatus(payment.status, dueDate),
+          installments: extractInstallments(payment.notes),
+          notes: payment.notes || undefined,
+        };
+      });
+      setRows(paymentRows);
+    } catch (error) {
+      console.error(error);
+      toast.error("Impossible de charger les paiements.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const filtered = rows.filter((p) => {
-    if (q && !p.patient.toLowerCase().includes(q.toLowerCase())) return false;
+    const search = q.trim().toLowerCase();
+    if (search) {
+      const haystack = [p.patient, p.phone, p.treatment, paymentStatusLabel(p.status), p.notes].join(" ").toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
     if (filter !== "all" && p.status !== filter) return false;
     return true;
   });
 
   const totalRevenue = rows.reduce((s, p) => s + p.paid, 0);
-  const pending = rows.filter((p) => p.status !== "paid").reduce((s, p) => s + (p.total - p.paid), 0);
+  const pending = rows.filter((p) => p.status !== "paid").reduce((s, p) => s + p.remaining, 0);
   const today = todayISO();
   const todayCollected = rows.filter((p) => p.dueDate <= today && p.status === "paid").reduce((s, p) => s + p.paid, 0);
-  const overdue = rows.filter((p) => p.status !== "paid" && p.dueDate < today).reduce((s, p) => s + (p.total - p.paid), 0);
+  const overdue = rows.filter((p) => p.status !== "paid" && p.dueDate < today).reduce((s, p) => s + p.remaining, 0);
 
-  const addPayment = () => {
+  const addPayment = async () => {
+    if (patientRows.length === 0) {
+      toast.error("Ajoutez d'abord un patient avant d'enregistrer un paiement.");
+      return;
+    }
+
     const total = Number(form.total);
     const paid = form.status === "unpaid" ? 0 : form.status === "paid" ? total : Math.min(Number(form.paid), total);
-    const status: PaymentStatus = form.status === "paid" || form.status === "partial" || form.status === "unpaid" ? form.status : paid >= total ? "paid" : paid > 0 ? "partial" : "unpaid";
-    const payment: Payment = {
-      id: `pay${Date.now()}`,
-      patientId: `p${Date.now()}`,
-      patient: form.patient.trim(),
+    const remaining = Math.max(total - paid, 0);
+    const status = toApiPaymentStatus(form.status === "paid" || form.status === "partial" || form.status === "unpaid" || form.status === "overdue"
+      ? form.status
+      : paid >= total ? "paid" : paid > 0 ? "partial" : "unpaid");
+    const payload: PaymentPayload = {
+      patient_id: form.patientId,
       treatment: form.treatment.trim(),
-      total,
-      paid,
-      dueDate: form.dueDate,
+      total_amount: total,
+      paid_amount: paid,
+      remaining_amount: remaining,
       status,
-      installments: Number(form.installments) > 1 ? Number(form.installments) : undefined,
-      notes: [form.paymentMethod, form.notes.trim()].filter(Boolean).join(" - "),
+      due_date: form.dueDate,
+      notes: form.notes.trim() || undefined,
     };
-    setRows((current) => [payment, ...current]);
-    setForm({
-      patient: "",
-      treatment: "",
-      total: "",
-      paid: "",
-      paymentMethod: "Especes",
-      status: "paid",
-      installments: "1",
-      dueDate: todayISO(),
-      notes: "",
-    });
-    setIsAddOpen(false);
-    toast.success("Paiement enregistre");
+    console.log("Payment payload before submit", payload);
+
+    setIsSaving(true);
+    try {
+      const created = await paymentsApi.createPayment(payload);
+      await loadData();
+      setForm({
+        patientId: "",
+        treatment: "",
+        total: "",
+        paid: "",
+        paymentMethod: "Especes",
+        status: "paid",
+        installments: "1",
+        dueDate: todayISO(),
+        notes: "",
+      });
+      setIsAddOpen(false);
+      toast.success("Paiement enregistré avec succès.");
+    } catch (error) {
+      console.error("Payment creation failed", { error, payload });
+      toast.error("Impossible d'enregistrer le paiement. Vérifiez les montants et réessayez.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const sendReminder = (id: string) => {
-    const payment = rows.find((p) => p.id === id);
-    const patient = patients.find((p) => p.id === payment?.patientId || p.name === payment?.patient);
-    const remaining = payment ? payment.total - payment.paid : 0;
+  const sendReminder = (payment: PaymentRow) => {
+    if (!payment.phone) {
+      toast.error("Numéro WhatsApp du patient manquant.");
+      return;
+    }
     const message = fillWhatsAppTemplate(whatsappTemplates.payment, {
-      Patient: payment?.patient,
-      Montant: remaining,
-      Traitement: payment?.treatment,
+      Patient: payment.patient,
+      Montant: payment.remaining,
+      Traitement: payment.treatment,
     });
-    if (!openWhatsAppMessage(patient?.phone, message)) return;
-    setRows((current) => current.map((p) => (p.id === id ? { ...p, notes: `Relance envoyee le ${formatShortDate()}` } : p)));
+    if (!openWhatsAppMessage(payment.phone, message)) return;
+    whatsappApi.create({
+      patient_id: payment.patientId,
+      type: "payment_reminder",
+      message,
+      phone: payment.phone,
+      status: "Préparé",
+    }).catch((error) => console.warn("WhatsApp log failed", error));
+    setRows((current) => current.map((p) => (p.id === payment.id ? { ...p, notes: `Relance envoyee le ${formatShortDate()}` } : p)));
   };
 
   return (
@@ -128,17 +246,31 @@ function PaymentsPage() {
             open={isAddOpen}
             onOpenChange={setIsAddOpen}
             onSubmit={addPayment}
-            submitLabel="Enregistrer"
-            disabled={!form.patient.trim() || !form.treatment.trim() || Number(form.total) <= 0 || Number(form.paid) < 0 || !form.dueDate}
+            submitLabel={isSaving ? "Enregistrement..." : "Enregistrer"}
+            disabled={isSaving || patientRows.length === 0 || !form.patientId || !form.treatment.trim() || Number(form.total) <= 0 || Number(form.paid) < 0 || !form.dueDate}
             trigger={
               <Button size="sm">
                 <Plus className="size-4" /> Nouveau paiement
               </Button>
             }
           >
+            {patientRows.length === 0 ? (
+              <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                Ajoutez d'abord un patient avant d'enregistrer un paiement.
+              </p>
+            ) : null}
             <div className="grid gap-2">
               <Label htmlFor="payment-patient">Patient</Label>
-              <Input id="payment-patient" value={form.patient} onChange={(e) => setForm((f) => ({ ...f, patient: e.target.value }))} />
+              <Select value={form.patientId} onValueChange={(patientId) => setForm((f) => ({ ...f, patientId }))}>
+                <SelectTrigger id="payment-patient"><SelectValue placeholder="Choisir un patient" /></SelectTrigger>
+                <SelectContent>
+                  {patientRows.map((patient) => (
+                    <SelectItem key={patient.id} value={patient.id}>
+                      {patient.name}{patient.phone ? ` - ${patient.phone}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label>Traitement facture</Label>
@@ -176,6 +308,7 @@ function PaymentsPage() {
                     <SelectItem value="paid">Paye</SelectItem>
                     <SelectItem value="partial">Partiel</SelectItem>
                     <SelectItem value="unpaid">Impaye</SelectItem>
+                    <SelectItem value="overdue">En retard</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -246,6 +379,7 @@ function PaymentsPage() {
                 <TabsTrigger value="paid">Payes</TabsTrigger>
                 <TabsTrigger value="partial">Partiels</TabsTrigger>
                 <TabsTrigger value="unpaid">Impayes</TabsTrigger>
+                <TabsTrigger value="overdue">En retard</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -265,8 +399,20 @@ function PaymentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((p) => {
-                  const pct = Math.round((p.paid / p.total) * 100);
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                      Chargement des paiements...
+                    </TableCell>
+                  </TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                      Aucun paiement trouvé.
+                    </TableCell>
+                  </TableRow>
+                ) : filtered.map((p) => {
+                  const pct = p.total > 0 ? Math.round((p.paid / p.total) * 100) : 0;
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -282,11 +428,11 @@ function PaymentsPage() {
                           <p className="text-xs text-muted-foreground">{formatMAD(p.paid)} - {pct}%</p>
                         </div>
                       </TableCell>
-                      <TableCell className="font-semibold">{formatMAD(p.total - p.paid)}</TableCell>
+                      <TableCell className="font-semibold">{formatMAD(p.remaining)}</TableCell>
                       <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{formatDate(p.dueDate)}</TableCell>
-                      <TableCell><StatusBadge tone={paymentTone(p.status)}>{paymentLabel(p.status)}</StatusBadge></TableCell>
+                      <TableCell><StatusBadge tone={paymentStatusTone(p.status)}>{paymentStatusLabel(p.status)}</StatusBadge></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => sendReminder(p.id)}>
+                        <Button variant="ghost" size="sm" onClick={() => sendReminder(p)}>
                           <MessageCircle className="size-4" />
                         </Button>
                       </TableCell>
@@ -300,4 +446,44 @@ function PaymentsPage() {
       </Card>
     </div>
   );
+}
+
+function toAmount(value: number | string | null | undefined) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function toUiPaymentStatus(status?: string | null, dueDate?: string): PaymentStatus {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "payé" || normalized === "paye" || normalized === "paid") return "paid";
+  if (normalized === "partiel" || normalized === "partial") return dueDate && dueDate < todayISO() ? "overdue" : "partial";
+  if (normalized === "en retard" || normalized === "overdue") return "overdue";
+  return dueDate && dueDate < todayISO() ? "overdue" : "unpaid";
+}
+
+function toApiPaymentStatus(status: PaymentStatus) {
+  if (status === "paid") return "Payé";
+  if (status === "partial") return "Partiel";
+  if (status === "overdue") return "En retard";
+  return "Impayé";
+}
+
+function paymentStatusTone(status: PaymentStatus) {
+  if (status === "paid") return "success";
+  if (status === "partial") return "warning";
+  if (status === "overdue") return "danger";
+  return "danger";
+}
+
+function paymentStatusLabel(status: PaymentStatus) {
+  if (status === "paid") return "Payé";
+  if (status === "partial") return "Partiel";
+  if (status === "overdue") return "En retard";
+  return "Impayé";
+}
+
+function extractInstallments(notes?: string | null) {
+  const match = notes?.match(/Plan\s+(\d+)x/i);
+  const installments = match ? Number(match[1]) : undefined;
+  return installments && installments > 1 ? installments : undefined;
 }
