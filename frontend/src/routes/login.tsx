@@ -1,11 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { Stethoscope, ShieldCheck, Wallet, Star } from "lucide-react";
-import { FormEvent } from "react";
+import { Eye, EyeOff, Stethoscope, ShieldCheck, Wallet, Star } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SupabaseAuthError } from "@/lib/supabase";
+import { authApi } from "@/services/authApi";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -19,10 +21,74 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const onSubmit = (e: FormEvent) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const loginButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    authApi.session().then((session) => {
+      if (session?.access_token) navigate({ to: "/" });
+    });
+  }, [navigate]);
+
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    toast.success("Connexion reussie");
-    navigate({ to: "/" });
+    if (!validateCredentials()) return;
+    setIsSubmitting(true);
+    try {
+      await authApi.signIn(email, password);
+      toast.success("Connexion reussie");
+      navigate({ to: "/" });
+    } catch (error) {
+      console.error(error);
+      toast.error(getFriendlyAuthError(error, "login"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onSignUp = async () => {
+    if (!validateCredentials({ requireStrongPassword: true })) return;
+    setIsSubmitting(true);
+    try {
+      const session = await authApi.signUp(email, password);
+      if (session.access_token) {
+        toast.success("Essai gratuit cree. Vous pouvez continuer.");
+        navigate({ to: "/" });
+      } else {
+        toast.success("Compte cree. Verifiez votre email avant de vous connecter.");
+      }
+    } catch (error) {
+      console.error(error);
+      const message = getFriendlyAuthError(error, "signup");
+      toast.error(message);
+      if (isExistingUserError(error)) {
+        window.setTimeout(() => loginButtonRef.current?.focus(), 0);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const validateCredentials = (options: { requireStrongPassword?: boolean } = {}) => {
+    if (!email.trim()) {
+      toast.error("Veuillez saisir votre email.");
+      return false;
+    }
+
+    if (!password) {
+      toast.error("Veuillez saisir votre mot de passe.");
+      return false;
+    }
+
+    if (options.requireStrongPassword && password.length < 6) {
+      toast.error("Le mot de passe doit contenir au moins 6 caractères.");
+      return false;
+    }
+
+    return true;
   };
 
   return (
@@ -44,7 +110,7 @@ function LoginPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" defaultValue="dr.mgassy@cabinet-atlas.ma" required />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="votre@email.com" />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -53,14 +119,31 @@ function LoginPage() {
                   Mot de passe oublie ?
                 </button>
               </div>
-              <Input id="password" type="password" defaultValue="demo1234" required />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Votre mot de passe"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  onClick={() => setShowPassword((value) => !value)}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
             </div>
-            <Button type="submit" className="w-full">Se connecter</Button>
+            <Button ref={loginButtonRef} type="submit" className="w-full" disabled={isSubmitting}>Se connecter</Button>
           </form>
 
           <p className="text-center text-xs text-muted-foreground">
             Nouveau cabinet ?{" "}
-            <button type="button" className="font-medium text-primary hover:underline" onClick={() => toast.success("Essai gratuit cree. Vous pouvez vous connecter.")}>
+            <button type="button" className="font-medium text-primary hover:underline" onClick={onSignUp} disabled={isSubmitting}>
               Commencer l'essai gratuit
             </button>
           </p>
@@ -102,4 +185,45 @@ function LoginPage() {
       </div>
     </div>
   );
+}
+
+function getFriendlyAuthError(error: unknown, mode: "login" | "signup") {
+  if (isMissingSupabaseEnvError(error)) return "Configuration Supabase manquante.";
+  if (isInvalidEmailError(error)) return "Veuillez saisir une adresse email valide.";
+  if (isWeakPasswordError(error)) return "Le mot de passe doit contenir au moins 6 caractères.";
+  if (isExistingUserError(error)) return "Un compte existe déjà avec cet email. Veuillez vous connecter.";
+  if (isEmailConfirmationRequired(error)) return "Compte créé. Veuillez confirmer votre email avant de vous connecter.";
+  return mode === "signup" ? "Creation du compte impossible." : "Connexion impossible. Verifiez vos identifiants.";
+}
+
+function getAuthErrorText(error: unknown) {
+  if (error instanceof SupabaseAuthError) {
+    return `${error.errorCode || ""} ${error.message}`.toLowerCase();
+  }
+  if (error instanceof Error) return error.message.toLowerCase();
+  return String(error || "").toLowerCase();
+}
+
+function isMissingSupabaseEnvError(error: unknown) {
+  return error instanceof SupabaseAuthError && error.errorCode === "missing_supabase_env";
+}
+
+function isExistingUserError(error: unknown) {
+  const text = getAuthErrorText(error);
+  return text.includes("user_already_exists") || text.includes("user already registered");
+}
+
+function isWeakPasswordError(error: unknown) {
+  const text = getAuthErrorText(error);
+  return text.includes("weak_password") || text.includes("password") && text.includes("6");
+}
+
+function isInvalidEmailError(error: unknown) {
+  const text = getAuthErrorText(error);
+  return text.includes("invalid_email") || text.includes("invalid email") || text.includes("email address is invalid");
+}
+
+function isEmailConfirmationRequired(error: unknown) {
+  const text = getAuthErrorText(error);
+  return text.includes("email not confirmed") || text.includes("email confirmation") || text.includes("confirm your email");
 }

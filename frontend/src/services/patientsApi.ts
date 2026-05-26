@@ -13,8 +13,17 @@ export type PatientPayload = {
   notes?: string;
 };
 
-type ApiPatient = PatientPayload & {
+export type ApiPatient = PatientPayload & {
   id: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type PatientRecord = Patient & {
+  full_name: string;
+  age?: number;
+  gender?: string;
+  address?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -26,15 +35,21 @@ export const patientsApi = {
   listWithFallback: () => withApiFallback(crud.list(), patients.map(fromMockPatient)),
 };
 
-export function toUiPatient(patient: ApiPatient): Patient {
+export function toUiPatient(patient: ApiPatient): PatientRecord {
   return {
     id: patient.id,
+    full_name: patient.full_name,
     name: patient.full_name,
     phone: patient.phone || "",
     email: patient.email || "",
+    age: patient.age,
+    gender: patient.gender,
+    address: patient.address,
     status: toUiPatientStatus(patient.status),
     lastVisit: patient.updated_at || patient.created_at || new Date().toISOString(),
     notes: patient.notes || "",
+    created_at: patient.created_at,
+    updated_at: patient.updated_at,
   };
 }
 

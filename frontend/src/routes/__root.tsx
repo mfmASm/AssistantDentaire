@@ -19,9 +19,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Bell, Search } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Bell, ChevronDown, LogOut, Search, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { getNotifications, type AppNotification } from "@/lib/notifications";
+import { getRoleLabel } from "@/lib/roles";
+import { authApi, type AuthMe } from "@/services/authApi";
 
 function NotFoundComponent() {
   return (
@@ -88,10 +97,60 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function AppShell() {
+  const router = useRouter();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const isAuthPage = pathname === "/login";
+  const isPublicPage = isAuthPage || pathname === "/sitemap.xml";
   const notifications = useMemo(() => getNotifications(), []);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const checkAuth = async () => {
+      const session = await authApi.session();
+
+      if (isAuthPage) {
+        if (session?.access_token) router.navigate({ to: "/" });
+        return;
+      }
+
+      if (isPublicPage) {
+        if (active) setIsAuthorized(true);
+        return;
+      }
+
+      if (!session?.access_token) {
+        if (active) setIsAuthorized(false);
+        router.navigate({ to: "/login" });
+        return;
+      }
+
+      try {
+        const user = await authApi.ensureOnboarded();
+        if (active) {
+          setCurrentUser(user);
+          setIsAuthorized(true);
+        }
+      } catch (error) {
+        console.error(error);
+        await authApi.logout();
+        if (active) {
+          setCurrentUser(null);
+          setIsAuthorized(false);
+        }
+        router.navigate({ to: "/login" });
+      }
+    };
+
+    checkAuth();
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthPage, isPublicPage, pathname, router]);
 
   useEffect(() => {
     try {
@@ -116,7 +175,22 @@ function AppShell() {
     toast.info("Notifications marquees comme lues");
   };
 
+  const handleLogout = async () => {
+    await authApi.logout();
+    setCurrentUser(null);
+    setIsAuthorized(false);
+    toast.success("Déconnexion réussie.");
+    router.navigate({ to: "/login" });
+  };
+
+  const userName = getUserName(currentUser);
+  const userInitials = getUserInitials(userName);
+  const userEmail = currentUser?.email || "email@dentalpilot.ma";
+  const cabinetName = getCabinetName(currentUser);
+  const roleLabel = getRoleLabel(currentUser?.role);
+
   if (isAuthPage) return <Outlet />;
+  if (!isPublicPage && !isAuthorized) return null;
 
   return (
     <SidebarProvider>
@@ -166,10 +240,40 @@ function AppShell() {
                   </div>
                 </PopoverContent>
               </Popover>
-              <div className="hidden sm:flex h-8 items-center gap-2 rounded-full border bg-card pl-1 pr-3">
-                <div className="flex size-6 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">DR</div>
-                <span className="text-xs font-medium">Dr. Safaa M'gaassy</span>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="flex h-8 max-w-[12rem] items-center gap-2 rounded-full border bg-card pl-1 pr-2.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">{userInitials}</div>
+                    <span className="hidden truncate text-xs font-medium sm:inline">{userName}</span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={8} className="w-[min(calc(100vw-1rem),18rem)] rounded-lg border bg-popover p-0 shadow-lg">
+                  <div className="flex gap-3 p-4">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{userInitials}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold">{userName}</p>
+                        <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px]">{roleLabel}</Badge>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{cabinetName}</p>
+                    </div>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <div className="p-1">
+                    <DropdownMenuItem onClick={() => router.navigate({ to: "/settings" })}>
+                      <Settings className="size-4" />
+                      Paramètres du cabinet
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                      <LogOut className="size-4" />
+                      Déconnexion
+                    </DropdownMenuItem>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </header>
           <main className="flex-1 p-4 sm:p-6 lg:p-8">
@@ -179,6 +283,26 @@ function AppShell() {
       </div>
     </SidebarProvider>
   );
+}
+
+function getUserName(user: AuthMe | null) {
+  return user?.full_name || "Utilisateur";
+}
+
+function getUserInitials(name: string) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+  return initials || "U";
+}
+
+function getCabinetName(user: AuthMe | null) {
+  const cabinet = user?.cabinet;
+  if (cabinet && typeof cabinet === "object" && "name" in cabinet && typeof cabinet.name === "string") return cabinet.name;
+  return "Cabinet dentaire";
 }
 
 function NotificationRow({ notification, isRead }: { notification: AppNotification; isRead: boolean }) {

@@ -14,6 +14,7 @@ from app.api.routes import (
     recalls,
     reviews,
     settings,
+    team,
     whatsapp_logs,
 )
 from app.core.config import get_settings
@@ -24,11 +25,18 @@ app = FastAPI(title="DentalPilot API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        settings_obj.frontend_url,
-    ],
+    allow_origins=list(
+        dict.fromkeys(
+            [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:8080",
+                "http://127.0.0.1:8080",
+                "http://localhost:3000",
+                settings_obj.frontend_url,
+            ]
+        )
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,3 +61,4 @@ app.include_router(medical_certificates.router)
 app.include_router(whatsapp_logs.router)
 app.include_router(dashboard.router)
 app.include_router(settings.router)
+app.include_router(team.router)

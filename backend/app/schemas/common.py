@@ -31,6 +31,24 @@ class AppointmentIn(ApiModel):
     status: str = "Confirmé"
     payment_status: str | None = None
     notes: str | None = None
+    follow_up_status: str | None = None
+    follow_up_note: str | None = None
+    follow_up_updated_at: str | None = None
+
+
+class AppointmentUpdate(ApiModel):
+    patient_id: UUID | None = None
+    doctor_id: UUID | None = None
+    appointment_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    treatment_type: str | None = None
+    status: str | None = None
+    payment_status: str | None = None
+    notes: str | None = None
+    follow_up_status: str | None = None
+    follow_up_note: str | None = None
+    follow_up_updated_at: str | None = None
 
 
 class PaymentIn(ApiModel):

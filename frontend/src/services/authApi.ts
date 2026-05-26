@@ -1,52 +1,61 @@
-import { apiFetch, jsonBody } from "@/services/api";
+import { ApiError, apiFetch, jsonBody } from "@/services/api";
+import { supabaseAuth } from "@/lib/supabase";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-type AuthResponse = {
-  access_token?: string;
-  refresh_token?: string;
-  user?: {
-    id: string;
-    email?: string;
-  };
+export type AuthMe = {
+  id: string;
+  email?: string;
+  full_name?: string;
+  role: string;
+  cabinet_id: string;
+  cabinet?: Record<string, unknown> | null;
 };
 
-async function supabaseAuth<T>(path: string, payload: unknown): Promise<T> {
-  const response = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) throw new Error(await response.text());
-  return response.json() as Promise<T>;
-}
-
-function persistSession(session: AuthResponse) {
-  if (session.access_token) window.localStorage.setItem("dentalpilot-access-token", session.access_token);
-  if (session.refresh_token) window.localStorage.setItem("dentalpilot-refresh-token", session.refresh_token);
-}
+export type OnboardResult = {
+  cabinet: Record<string, unknown> | null;
+  profile: Record<string, unknown>;
+};
 
 export const authApi = {
   signIn: async (email: string, password: string) => {
-    const session = await supabaseAuth<AuthResponse>("/token?grant_type=password", { email, password });
-    persistSession(session);
+    const session = await supabaseAuth.signIn(email, password);
+    await authApi.onboard({
+      cabinet_name: "Cabinet DentalPilot",
+      full_name: email,
+    });
     return session;
   },
+
   signUp: async (email: string, password: string) => {
-    const session = await supabaseAuth<AuthResponse>("/signup", { email, password });
-    persistSession(session);
+    const session = await supabaseAuth.signUp(email, password);
+    if (session.access_token) {
+      await authApi.onboard({
+        cabinet_name: "Cabinet DentalPilot",
+        full_name: email,
+      });
+    }
     return session;
   },
-  logout: () => {
-    window.localStorage.removeItem("dentalpilot-access-token");
-    window.localStorage.removeItem("dentalpilot-refresh-token");
+
+  logout: () => supabaseAuth.signOut(),
+
+  session: () => supabaseAuth.getSession(),
+
+  me: () => apiFetch<AuthMe>("/auth/me"),
+
+  onboard: (payload: Record<string, unknown> = {}) =>
+    apiFetch<OnboardResult>("/auth/onboard", { method: "POST", body: jsonBody(payload) }),
+
+  ensureOnboarded: async () => {
+    try {
+      return await authApi.me();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        await authApi.onboard({
+          cabinet_name: "Cabinet DentalPilot",
+        });
+        return authApi.me();
+      }
+      throw error;
+    }
   },
-  me: () => apiFetch("/auth/me"),
-  onboard: (payload: Record<string, unknown>) => apiFetch("/auth/onboard", { method: "POST", body: jsonBody(payload) }),
 };

@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { whatsappTemplates } from "@/lib/whatsapp";
+import { canManageTeam, getRoleLabel } from "@/lib/roles";
+import { authApi, type AuthMe } from "@/services/authApi";
+import { teamApi, type TeamInvitePayload, type TeamMember } from "@/services/teamApi";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -40,6 +44,16 @@ const automationDefaults = [
 ];
 
 function SettingsPage() {
+  const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [isTeamLoading, setIsTeamLoading] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteForm, setInviteForm] = useState<TeamInvitePayload>({
+    full_name: "",
+    email: "",
+    role: "secretary",
+  });
   const [clinic, setClinic] = useState({
     name: "Cabinet Dentaire Atlas",
     dentist: "Dr. Safaa M'gaassy",
@@ -59,9 +73,63 @@ function SettingsPage() {
   const [whatsappMode, setWhatsappMode] = useState("manual");
   const [rules, setRules] = useState(Object.fromEntries(recallRules.map((r) => [r.key, r.default])));
   const [automations, setAutomations] = useState(Object.fromEntries(automationDefaults.map((a) => [a.key, a.on])));
+  const canCurrentUserManageTeam = canManageTeam(currentUser?.role);
+
+  const loadTeam = async () => {
+    setIsTeamLoading(true);
+    try {
+      const members = await teamApi.list();
+      setTeamMembers(members);
+    } catch (error) {
+      console.error(error);
+      toast.error("Impossible de charger l'équipe du cabinet.");
+    } finally {
+      setIsTeamLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    authApi.me().then((user) => {
+      if (!active) return;
+      setCurrentUser(user);
+      if (canManageTeam(user.role)) loadTeam();
+    }).catch((error) => {
+      console.error(error);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const saveSettings = () => {
     toast.success(`Parametres enregistres pour ${clinic.name}`);
+  };
+
+  const inviteTeamMember = async () => {
+    if (!inviteForm.full_name.trim() || !inviteForm.email.trim()) {
+      toast.error("Nom et email sont requis.");
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      const result = await teamApi.invite({
+        full_name: inviteForm.full_name.trim(),
+        email: inviteForm.email.trim(),
+        role: inviteForm.role,
+      });
+      toast.info(result.message);
+      setInviteForm({ full_name: "", email: "", role: "secretary" });
+      setIsInviteOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error("Invitation impossible.");
+    } finally {
+      setIsInviting(false);
+    }
   };
 
   return (
@@ -84,6 +152,49 @@ function SettingsPage() {
             </div>
             <SettingInput label="Lien Google Reviews" value={clinic.reviewLink} onChange={(reviewLink) => setClinic((c) => ({ ...c, reviewLink }))} />
             <SettingInput label="Adresse" value={clinic.address} onChange={(address) => setClinic((c) => ({ ...c, address }))} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Équipe du cabinet</CardTitle>
+                <CardDescription>Gestion des docteurs et secrétaires du cabinet</CardDescription>
+              </div>
+              {canCurrentUserManageTeam && (
+                <Button size="sm" onClick={() => setIsInviteOpen(true)}>
+                  Inviter un membre
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!canCurrentUserManageTeam ? (
+              <p className="text-sm text-muted-foreground">Seul le docteur propriétaire peut gérer l’équipe.</p>
+            ) : isTeamLoading ? (
+              <p className="text-sm text-muted-foreground">Chargement de l’équipe...</p>
+            ) : teamMembers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucun membre trouvé.</p>
+            ) : (
+              <div className="space-y-2">
+                {teamMembers.map((member) => (
+                  <div key={member.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{member.full_name || "Utilisateur"}</p>
+                      <p className="truncate text-xs text-muted-foreground">{member.email || "-"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {member.created_at ? `Créé le ${new Date(member.created_at).toLocaleDateString("fr-FR")}` : "Date inconnue"}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-medium">{getRoleLabel(member.role)}</p>
+                      <p className="text-xs text-muted-foreground">{member.status || "Actif"}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -174,6 +285,39 @@ function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Inviter un membre</DialogTitle>
+            <DialogDescription>Préparez l'invitation d'un docteur ou d'une secrétaire médicale.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="invite-name">Nom complet</Label>
+              <Input id="invite-name" value={inviteForm.full_name} onChange={(e) => setInviteForm((form) => ({ ...form, full_name: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="invite-email">Email</Label>
+              <Input id="invite-email" type="email" value={inviteForm.email} onChange={(e) => setInviteForm((form) => ({ ...form, email: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Rôle</Label>
+              <Select value={inviteForm.role} onValueChange={(role) => setInviteForm((form) => ({ ...form, role: role as TeamInvitePayload["role"] }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="doctor">Docteur</SelectItem>
+                  <SelectItem value="secretary">Secrétaire médicale</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsInviteOpen(false)}>Annuler</Button>
+            <Button onClick={inviteTeamMember} disabled={isInviting}>Inviter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
