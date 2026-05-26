@@ -47,7 +47,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="border-b">
-        <div className="flex items-center gap-2.5 px-2 py-2">
+        <Link to="/" className="flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-accent">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] text-primary-foreground shadow-sm">
             <Stethoscope className="size-5" />
           </div>
@@ -57,7 +57,7 @@ export function AppSidebar() {
               <span className="text-[11px] text-muted-foreground">Cabinet Atlas — Casablanca</span>
             </div>
           )}
-        </div>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent className="px-1">

@@ -30,6 +30,7 @@ import { Bell, ChevronDown, LogOut, Search, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { getNotifications, type AppNotification } from "@/lib/notifications";
 import { getRoleLabel } from "@/lib/roles";
+import { DEMO_MODE_EVENT, isDemoMode } from "@/lib/demoMode";
 import { authApi, type AuthMe } from "@/services/authApi";
 
 function NotFoundComponent() {
@@ -106,6 +107,7 @@ function AppShell() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
 
   useEffect(() => {
     console.log("Root route rendered");
@@ -115,7 +117,7 @@ function AppShell() {
     let active = true;
 
     const checkAuth = async () => {
-      if (active) setIsCheckingAuth(true);
+      if (active && !isAuthorized) setIsCheckingAuth(true);
       try {
         const session = await authApi.session();
         console.log("Current pathname", pathname);
@@ -171,11 +173,21 @@ function AppShell() {
     return () => {
       active = false;
     };
-  }, [isAuthPage, isPublicPage, pathname, router]);
+  }, [isAuthPage, isPublicPage, isAuthorized, pathname, router]);
 
   useEffect(() => {
     console.log("Auth loading state", isCheckingAuth);
   }, [isCheckingAuth]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -230,6 +242,7 @@ function AppShell() {
               <Input placeholder="Rechercher un patient, un paiement…" className="h-9 pl-9" />
             </div>
             <div className="ml-auto flex items-center gap-2">
+              {demoMode && <Badge variant="secondary" className="bg-warning/20 text-warning-foreground">Mode démo</Badge>}
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative" aria-label={`${notificationCount} notifications non lues`}>

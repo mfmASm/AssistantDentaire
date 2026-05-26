@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Star, Send, Link2, MessageCircle, TrendingUp, Copy } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge, reviewTone, reviewLabel } from "@/components/status-badge";
 import { reviews, formatDate, type ReviewRequest } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoReviews, isDemoMode } from "@/lib/demoMode";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/reviews")({
@@ -26,12 +27,39 @@ export const Route = createFileRoute("/reviews")({
 });
 
 function ReviewsPage() {
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const [rows, setRows] = useState<ReviewRequest[]>(reviews);
   const [reviewLink, setReviewLink] = useState("https://g.page/r/cabinet-atlas-casablanca/review");
   const [template, setTemplate] = useState(whatsappTemplates.review);
   const sent = rows.filter((r) => r.status !== "not_sent").length;
   const received = rows.filter((r) => r.status === "reviewed").length;
   const rate = sent > 0 ? Math.round((received / sent) * 100) : 0;
+
+  useEffect(() => {
+    setRows(
+      demoMode
+        ? demoReviews.map((review) => ({
+            id: review.id,
+            patientId: review.id,
+            patient: review.patient,
+            phone: review.phone,
+            visitDate: review.visitDate,
+            status: review.status as ReviewRequest["status"],
+            sentAt: review.sentAt,
+          }))
+        : reviews,
+    );
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
+  }, []);
 
   const sendReview = (id: string) => {
     const request = rows.find((r) => r.id === id);

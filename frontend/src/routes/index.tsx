@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   CalendarDays,
   Wallet,
@@ -27,10 +28,29 @@ import {
   reviewTone, reviewLabel,
 } from "@/components/status-badge";
 import {
-  appointments, payments, recalls, reviews, newLeads, patients,
+  appointments as baseAppointments,
+  payments as basePayments,
+  recalls as baseRecalls,
+  reviews as baseReviews,
+  newLeads,
+  patients as basePatients,
   formatMAD, formatDate,
+  type Appointment,
+  type Payment,
+  type Recall,
+  type ReviewRequest,
+  type Patient,
 } from "@/lib/demo-data";
 import { formatLongDate, todayISO } from "@/lib/date-utils";
+import {
+  DEMO_MODE_EVENT,
+  demoAppointments,
+  demoPatients,
+  demoPayments,
+  demoRecalls,
+  demoReviews,
+  isDemoMode,
+} from "@/lib/demoMode";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/")({
@@ -43,7 +63,84 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
+const paymentStatusMap = {
+  "Payé": "paid",
+  Paye: "paid",
+  Partiel: "partial",
+  Impayé: "unpaid",
+  "En retard": "unpaid",
+  "Non réglé": "unpaid",
+} as const;
+
+const appointmentStatusMap = {
+  "Confirmé": "confirmed",
+  "En attente": "waiting",
+  "Terminé": "completed",
+  "Annulé": "cancelled",
+  "No-show": "no_show",
+} as const;
+
+const toDashboardPatient = (patient: (typeof demoPatients)[number]): Patient => ({
+  id: patient.id,
+  name: patient.full_name,
+  phone: patient.phone || "",
+  email: patient.email || "",
+  status: patient.status ?? "active",
+  lastVisit: patient.updated_at || todayISO(),
+  notes: patient.notes,
+});
+
+const toDashboardPayment = (payment: (typeof demoPayments)[number]): Payment => ({
+  id: payment.id,
+  patientId: payment.patient_id,
+  patient: payment.patients?.full_name || "Patient",
+  treatment: payment.treatment,
+  total: payment.total_amount,
+  paid: payment.paid_amount,
+  dueDate: payment.due_date || todayISO(),
+  status: paymentStatusMap[payment.status as keyof typeof paymentStatusMap] ?? "unpaid",
+  notes: payment.notes,
+});
+
+const toDashboardAppointment = (appointment: (typeof demoAppointments)[number]): Appointment => ({
+  id: appointment.id,
+  time: appointment.start_time,
+  patientId: appointment.patient_id,
+  patient: appointment.patients?.full_name || "Patient",
+  treatment: appointment.treatment_type,
+  status: appointmentStatusMap[appointment.status as keyof typeof appointmentStatusMap] ?? "waiting",
+  paymentStatus: paymentStatusMap[appointment.payment_status as keyof typeof paymentStatusMap] ?? "unpaid",
+  followUp: Boolean(appointment.follow_up_status && appointment.follow_up_status !== "Aucun suivi"),
+});
+
+const toDashboardRecall = (recall: (typeof demoRecalls)[number]): Recall => ({
+  id: recall.id,
+  patientId: recall.id,
+  patient: recall.patient,
+  phone: recall.phone,
+  type: recall.type,
+  lastVisit: todayISO(),
+  nextRecall: recall.nextRecall,
+  status: recall.status as Recall["status"],
+});
+
+const toDashboardReview = (review: (typeof demoReviews)[number]): ReviewRequest => ({
+  id: review.id,
+  patientId: review.id,
+  patient: review.patient,
+  phone: review.phone,
+  visitDate: review.visitDate,
+  status: review.status as ReviewRequest["status"],
+  sentAt: review.sentAt,
+});
+
 function Dashboard() {
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
+  const patients = demoMode ? demoPatients.map(toDashboardPatient) : basePatients;
+  const appointments = demoMode ? demoAppointments.map(toDashboardAppointment) : baseAppointments;
+  const payments = demoMode ? demoPayments.map(toDashboardPayment) : basePayments;
+  const recalls = demoMode ? demoRecalls.map(toDashboardRecall) : baseRecalls;
+  const reviews = demoMode ? demoReviews.map(toDashboardReview) : baseReviews;
   const todayAppts = appointments;
   const unpaid = payments.filter((p) => p.status !== "paid");
   const todayCollected = payments
@@ -55,6 +152,16 @@ function Dashboard() {
   const followUps = appointments.filter((a) => a.followUp);
   const patientPhone = (patientId?: string, patientName?: string) =>
     patients.find((patient) => patient.id === patientId || patient.name === patientName)?.phone;
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
+  }, []);
 
   const sendQuickWhatsApp = () => {
     const target = followUps[0] ?? appointments[0];

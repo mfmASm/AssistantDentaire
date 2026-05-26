@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StatusBadge, apptTone, apptLabel, paymentTone, paymentLabel } from "@/components/status-badge";
 import { formatDate, type AppointmentStatus, type PaymentStatus } from "@/lib/demo-data";
 import { todayISO, formatLongDate } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoAppointments, demoPatients, isDemoMode } from "@/lib/demoMode";
 import { openWhatsAppMessage } from "@/lib/whatsapp";
 import { appointmentsApi, type ApiAppointment, type AppointmentPayload } from "@/services/appointmentsApi";
 import { patientsApi, toUiPatient, type PatientRecord } from "@/services/patientsApi";
@@ -120,6 +121,7 @@ function AppointmentsPage() {
   const [patientRows, setPatientRows] = useState<PatientRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
@@ -165,6 +167,34 @@ function AppointmentsPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
+      if (demoMode) {
+        const uiPatients = demoPatients.map(toUiPatient);
+        setPatientRows(uiPatients);
+        const patientMap = new Map(uiPatients.map((patient) => [patient.id, patient]));
+        const appointmentRows = demoAppointments.map((appointment) => {
+          const patient = patientMap.get(appointment.patient_id);
+          const followUpStatus = toFollowUpStatus(appointment.follow_up_status);
+          return {
+            id: appointment.id,
+            date: appointment.appointment_date,
+            time: normalizeTime(appointment.start_time),
+            endTime: appointment.end_time ? normalizeTime(appointment.end_time) : undefined,
+            patientId: appointment.patient_id,
+            patient: appointment.patients?.full_name || patient?.name || "Patient inconnu",
+            phone: appointment.patients?.phone || patient?.phone || "",
+            treatment: appointment.treatment_type || "-",
+            status: toUiStatus(appointment.status),
+            paymentStatus: toUiPaymentStatus(appointment.payment_status),
+            notes: appointment.notes || undefined,
+            followUp: followUpStatus !== "none",
+            followUpStatus,
+            followUpNote: appointment.follow_up_note || undefined,
+            followUpUpdatedAt: appointment.follow_up_updated_at || undefined,
+          };
+        });
+        setRows(appointmentRows);
+        return;
+      }
       const patients = await patientsApi.list();
       const uiPatients = patients.map(toUiPatient);
       setPatientRows(uiPatients);
@@ -201,6 +231,16 @@ function AppointmentsPage() {
 
   useEffect(() => {
     loadData();
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
   }, []);
 
   const filtered = rows.filter((a) => {
@@ -240,6 +280,36 @@ function AppointmentsPage() {
         notes: form.notes.trim() || undefined,
         follow_up_status: "Aucun suivi",
       };
+      if (demoMode) {
+        const patient = patientRows.find((row) => row.id === form.patientId);
+        const created = toAppointmentRow({
+          id: `demo-appt-${Date.now()}`,
+          patient_id: form.patientId,
+          appointment_date: form.date,
+          start_time: form.time,
+          end_time: payload.end_time,
+          treatment_type: payload.treatment_type,
+          status: payload.status || "Confirmé",
+          payment_status: payload.payment_status,
+          notes: payload.notes,
+          follow_up_status: payload.follow_up_status,
+          patients: patient ? { id: patient.id, full_name: patient.name, phone: patient.phone } : null,
+        });
+        setRows((current) => [created, ...current]);
+        setForm({
+          date: todayISO(),
+          time: "",
+          patientId: "",
+          treatment: "",
+          duration: "",
+          practitioner: "Dr. Safaa M'gaassy",
+          room: "Fauteuil 1",
+          notes: "",
+        });
+        setIsAddOpen(false);
+        toast.success("RDV ajouté avec succès.");
+        return;
+      }
       const created = await appointmentsApi.createAppointment(payload);
       setRows((current) => [toAppointmentRow(created), ...current]);
       setForm({
@@ -269,6 +339,7 @@ function AppointmentsPage() {
     }
     const message = `Bonjour ${appointment.patient}, nous vous rappelons votre rendez-vous au cabinet prévu le ${formatDate(appointment.date)} à ${appointment.time}. Merci de confirmer votre présence.`;
     if (!openWhatsAppMessage(appointment.phone, message)) return;
+    if (demoMode) return;
     whatsappApi.create({
       patient_id: appointment.patientId,
       type: "appointment_reminder",
@@ -281,6 +352,23 @@ function AppointmentsPage() {
   const saveFollowUp = async (appointmentId: string, followUpStatus: FollowUpStatus, followUpNote?: string) => {
     try {
       const updatedAt = new Date().toISOString();
+      if (demoMode) {
+        setRows((current) =>
+          current.map((appointment) =>
+            appointment.id === appointmentId
+              ? {
+                  ...appointment,
+                  followUpStatus,
+                  followUpNote: followUpNote?.trim() || undefined,
+                  followUp: followUpStatus !== "none",
+                  followUpUpdatedAt: updatedAt,
+                }
+              : appointment,
+          ),
+        );
+        toast.success("Suivi mis à jour avec succès.");
+        return;
+      }
       await appointmentsApi.updateAppointment(appointmentId, {
         follow_up_status: followUpLabel(followUpStatus),
         follow_up_note: followUpNote?.trim() || null,
@@ -336,6 +424,11 @@ function AppointmentsPage() {
     if (!confirmed) return;
     setDeletingId(appointment.id);
     try {
+      if (demoMode) {
+        setRows((current) => current.filter((row) => row.id !== appointment.id));
+        toast.success("RDV supprimé avec succès.");
+        return;
+      }
       await appointmentsApi.deleteAppointment(appointment.id);
       setRows((current) => current.filter((row) => row.id !== appointment.id));
       toast.success("RDV supprimé avec succès.");

@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { whatsappTemplates } from "@/lib/whatsapp";
-import { canManageTeam, getRoleLabel } from "@/lib/roles";
+import { canManageCabinetSettings, canManageTeam, getRoleLabel } from "@/lib/roles";
+import { isDemoMode, setDemoMode } from "@/lib/demoMode";
 import { authApi, type AuthMe } from "@/services/authApi";
 import { teamApi, type TeamInvitePayload, type TeamMember } from "@/services/teamApi";
 
@@ -73,7 +75,9 @@ function SettingsPage() {
   const [whatsappMode, setWhatsappMode] = useState("manual");
   const [rules, setRules] = useState(Object.fromEntries(recallRules.map((r) => [r.key, r.default])));
   const [automations, setAutomations] = useState(Object.fromEntries(automationDefaults.map((a) => [a.key, a.on])));
+  const [demoModeEnabled, setDemoModeEnabled] = useState(() => isDemoMode());
   const canCurrentUserManageTeam = canManageTeam(currentUser?.role);
+  const canCurrentUserManageDemoMode = canManageCabinetSettings(currentUser?.role);
 
   const loadTeam = async () => {
     setIsTeamLoading(true);
@@ -106,6 +110,12 @@ function SettingsPage() {
 
   const saveSettings = () => {
     toast.success(`Parametres enregistres pour ${clinic.name}`);
+  };
+
+  const updateDemoMode = (enabled: boolean) => {
+    setDemoMode(enabled);
+    setDemoModeEnabled(enabled);
+    toast.success(enabled ? "Mode démo activé." : "Mode réel activé.");
   };
 
   const inviteTeamMember = async () => {
@@ -141,6 +151,33 @@ function SettingsPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {canCurrentUserManageDemoMode && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Mode démo</CardTitle>
+                  <CardDescription>
+                    Activez ce mode pour afficher des données fictives destinées aux captures d’écran, présentations commerciales et démonstrations.
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary" className={demoModeEnabled ? "bg-warning/20 text-warning-foreground" : ""}>
+                  {demoModeEnabled ? "Mode démo activé" : "Mode réel"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                <Label htmlFor="demo-mode" className="font-normal">Activer le mode démo</Label>
+                <Switch id="demo-mode" checked={demoModeEnabled} onCheckedChange={updateDemoMode} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Les données du mode démo sont fictives et ne sont pas enregistrées dans Supabase.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader><CardTitle>Informations du cabinet</CardTitle><CardDescription>Affichees sur les factures et messages</CardDescription></CardHeader>
           <CardContent className="space-y-4">

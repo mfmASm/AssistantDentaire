@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/status-badge";
 import { formatMAD, formatDate } from "@/lib/demo-data";
 import { todayISO, formatShortDate } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoPatients, demoPayments, isDemoMode } from "@/lib/demoMode";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
 import { patientsApi, toUiPatient, type PatientRecord } from "@/services/patientsApi";
 import { paymentsApi, type ApiPayment, type PaymentPayload } from "@/services/paymentsApi";
@@ -67,6 +68,7 @@ function PaymentsPage() {
   const [patientRows, setPatientRows] = useState<PatientRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -110,6 +112,34 @@ function PaymentsPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
+      if (demoMode) {
+        const uiPatients = demoPatients.map(toUiPatient);
+        setPatientRows(uiPatients);
+        const patientMap = new Map(uiPatients.map((patient) => [patient.id, patient]));
+        const paymentRows = demoPayments.map((payment) => {
+          const patient = patientMap.get(payment.patient_id);
+          const total = toAmount(payment.total_amount);
+          const paid = toAmount(payment.paid_amount);
+          const remaining = payment.remaining_amount == null ? Math.max(total - paid, 0) : toAmount(payment.remaining_amount);
+          const dueDate = payment.due_date || todayISO();
+          return {
+            id: payment.id,
+            patientId: payment.patient_id,
+            patient: payment.patients?.full_name || patient?.name || "Patient inconnu",
+            phone: payment.patients?.phone || patient?.phone || "",
+            treatment: payment.treatment || "-",
+            total,
+            paid,
+            remaining,
+            dueDate,
+            status: toUiPaymentStatus(payment.status, dueDate),
+            installments: extractInstallments(payment.notes),
+            notes: payment.notes || undefined,
+          };
+        });
+        setRows(paymentRows);
+        return;
+      }
       const patients = await patientsApi.list();
       const uiPatients = patients.map(toUiPatient);
       setPatientRows(uiPatients);
@@ -146,6 +176,16 @@ function PaymentsPage() {
 
   useEffect(() => {
     loadData();
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
   }, []);
 
   const filtered = rows.filter((p) => {
@@ -190,6 +230,36 @@ function PaymentsPage() {
 
     setIsSaving(true);
     try {
+      if (demoMode) {
+        const patient = patientRows.find((row) => row.id === form.patientId);
+        const created = toPaymentRow({
+          id: `demo-payment-${Date.now()}`,
+          patient_id: form.patientId,
+          treatment: payload.treatment,
+          total_amount: total,
+          paid_amount: paid,
+          remaining_amount: remaining,
+          status,
+          due_date: form.dueDate,
+          notes: payload.notes,
+          patients: patient ? { id: patient.id, full_name: patient.name, phone: patient.phone } : null,
+        });
+        setRows((current) => [created, ...current]);
+        setForm({
+          patientId: "",
+          treatment: "",
+          total: "",
+          paid: "",
+          paymentMethod: "Especes",
+          status: "paid",
+          installments: "1",
+          dueDate: todayISO(),
+          notes: "",
+        });
+        setIsAddOpen(false);
+        toast.success("Paiement enregistré avec succès.");
+        return;
+      }
       const created = await paymentsApi.createPayment(payload);
       await loadData();
       setForm({
@@ -224,6 +294,10 @@ function PaymentsPage() {
       Traitement: payment.treatment,
     });
     if (!openWhatsAppMessage(payment.phone, message)) return;
+    if (demoMode) {
+      setRows((current) => current.map((p) => (p.id === payment.id ? { ...p, notes: `Relance envoyee le ${formatShortDate()}` } : p)));
+      return;
+    }
     whatsappApi.create({
       patient_id: payment.patientId,
       type: "payment_reminder",

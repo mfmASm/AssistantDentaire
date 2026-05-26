@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, patientTone, patientLabel } from "@/components/status-badge";
 import { formatDate, type Patient } from "@/lib/demo-data";
 import { formatShortDate } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoPatients, isDemoMode } from "@/lib/demoMode";
 import { openWhatsAppMessage } from "@/lib/whatsapp";
 import { patientsApi, toUiPatient, type PatientPayload, type PatientRecord } from "@/services/patientsApi";
 
@@ -34,6 +35,7 @@ export const Route = createFileRoute("/patients")({
 function PatientsPage() {
   const [rows, setRows] = useState<PatientRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
@@ -67,6 +69,10 @@ function PatientsPage() {
   const loadPatients = async () => {
     setIsLoading(true);
     try {
+      if (demoMode) {
+        setRows(demoPatients.map(toUiPatient));
+        return;
+      }
       const patients = await patientsApi.list();
       setRows(patients.map(toUiPatient));
     } catch (error) {
@@ -79,6 +85,16 @@ function PatientsPage() {
 
   useEffect(() => {
     loadPatients();
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
   }, []);
 
   const filtered = rows.filter((p) => {
@@ -100,6 +116,14 @@ function PatientsPage() {
         status: newPatient.status,
         notes: [newPatient.notes.trim(), `Source: ${newPatient.source}`].filter(Boolean).join(" - ") || "Nouveau patient",
       };
+      if (demoMode) {
+        const created = toUiPatient({ id: `demo-patient-${Date.now()}`, ...payload });
+        setRows((current) => [created, ...current]);
+        setNewPatient({ name: "", phone: "", email: "", age: "", gender: "", address: "", status: "active", source: "Walk-in", notes: "" });
+        setIsAddOpen(false);
+        toast.success("Patient ajouté avec succès.");
+        return;
+      }
       const created = await patientsApi.create(payload);
       setRows((current) => [toUiPatient(created), ...current]);
       setNewPatient({ name: "", phone: "", email: "", age: "", gender: "", address: "", status: "active", source: "Walk-in", notes: "" });
@@ -160,6 +184,14 @@ function PatientsPage() {
         status: editPatient.status,
         notes: editPatient.notes.trim() || undefined,
       };
+      if (demoMode) {
+        const uiPatient = toUiPatient({ id: selectedPatient.id, ...payload, created_at: selectedPatient.created_at, updated_at: new Date().toISOString() });
+        setRows((current) => current.map((patient) => (patient.id === selectedPatient.id ? uiPatient : patient)));
+        setSelectedPatient(uiPatient);
+        setIsEditOpen(false);
+        toast.success("Patient mis à jour avec succès.");
+        return;
+      }
       const updated = await patientsApi.update(selectedPatient.id, payload);
       const uiPatient = toUiPatient(updated);
       setRows((current) => current.map((patient) => (patient.id === selectedPatient.id ? uiPatient : patient)));
@@ -180,6 +212,16 @@ function PatientsPage() {
 
     setIsDeleting(true);
     try {
+      if (demoMode) {
+        setRows((current) => current.filter((row) => row.id !== patient.id));
+        if (selectedPatient?.id === patient.id) {
+          setSelectedPatient(null);
+          setIsViewOpen(false);
+          setIsEditOpen(false);
+        }
+        toast.success("Patient supprimé avec succès.");
+        return;
+      }
       await patientsApi.remove(patient.id);
       setRows((current) => current.filter((row) => row.id !== patient.id));
       if (selectedPatient?.id === patient.id) {

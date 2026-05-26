@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, BellRing, MessageCircle, CalendarPlus, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, recallTone, recallLabel } from "@/components/status-badge";
 import { recalls, formatDate, type Recall } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoRecalls, isDemoMode } from "@/lib/demoMode";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/recalls")({
@@ -55,6 +56,7 @@ const addDays = (iso: string, days: number) => {
 };
 
 function RecallsPage() {
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const [rows, setRows] = useState<Recall[]>(recalls);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
@@ -76,6 +78,33 @@ function RecallsPage() {
     if (filter !== "all" && r.status !== filter) return false;
     return true;
   });
+
+  useEffect(() => {
+    setRows(
+      demoMode
+        ? demoRecalls.map((recall) => ({
+            id: recall.id,
+            patientId: recall.id,
+            patient: recall.patient,
+            phone: recall.phone,
+            type: recall.type,
+            lastVisit: todayISO(),
+            nextRecall: recall.nextRecall,
+            status: recall.status as Recall["status"],
+          }))
+        : recalls,
+    );
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
+  }, []);
 
   const addRecall = () => {
     const recall: Recall = {
