@@ -11,10 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge, reviewTone, reviewLabel } from "@/components/status-badge";
-import { reviews, formatDate, type ReviewRequest } from "@/lib/demo-data";
+import { formatDate, type ReviewRequest, type ReviewStatus } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
-import { DEMO_MODE_EVENT, demoReviews, isDemoMode } from "@/lib/demoMode";
+import { DEMO_MODE_EVENT, demoPatients, demoReviews, isDemoMode } from "@/lib/demoMode";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { appointmentsApi, type ApiAppointment } from "@/services/appointmentsApi";
+import { patientsApi, type ApiPatient } from "@/services/patientsApi";
+import { createReviewRequest, getReviews, markReviewSent, type ApiReviewRequest, type ReviewPayload } from "@/services/reviewsApi";
+import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/reviews")({
   head: () => ({
@@ -26,29 +30,111 @@ export const Route = createFileRoute("/reviews")({
   component: ReviewsPage,
 });
 
+const normalizeReviewStatus = (status?: string): ReviewStatus => {
+  if (status === "Envoyé" || status === "Envoye" || status === "sent") return "sent";
+  if (status === "Avis reçu" || status === "Avis recu" || status === "reviewed") return "reviewed";
+  return "not_sent";
+};
+
+const toDemoRows = (): ReviewRequest[] =>
+  demoReviews.map((review) => {
+    const patient = demoPatients.find((p) => p.full_name === review.patient);
+    return {
+      id: review.id,
+      patientId: patient?.id ?? review.id,
+      patient: review.patient,
+      phone: review.phone,
+      visitDate: review.visitDate,
+      status: normalizeReviewStatus(review.status),
+      sentAt: review.sentAt,
+    };
+  });
+
+const toReviewRow = (
+  review: ApiReviewRequest,
+  patientsById: Record<string, ApiPatient>,
+  appointmentsById: Record<string, ApiAppointment> = {},
+): ReviewRequest => {
+  const patient = review.patient_id ? patientsById[review.patient_id] : undefined;
+  const appointment = review.appointment_id ? appointmentsById[review.appointment_id] : undefined;
+  return {
+    id: review.id,
+    patientId: review.patient_id || review.id,
+    patient: patient?.full_name ?? "Patient inconnu",
+    phone: patient?.phone ?? "",
+    visitDate: appointment?.appointment_date || review.created_at?.slice(0, 10) || todayISO(),
+    status: normalizeReviewStatus(review.status),
+    sentAt: review.sent_at?.slice(0, 10),
+  };
+};
+
 function ReviewsPage() {
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
-  const [rows, setRows] = useState<ReviewRequest[]>(reviews);
+  const [rows, setRows] = useState<ReviewRequest[]>(() => (isDemoMode() ? toDemoRows() : []));
+  const [patients, setPatients] = useState<ApiPatient[]>(() => (isDemoMode() ? demoPatients : []));
+  const [reviews, setReviews] = useState<ApiReviewRequest[]>([]);
+  const [appointments, setAppointments] = useState<ApiAppointment[]>([]);
+  const [loading, setLoading] = useState(false);
   const [reviewLink, setReviewLink] = useState("https://g.page/r/cabinet-atlas-casablanca/review");
   const [template, setTemplate] = useState(whatsappTemplates.review);
   const sent = rows.filter((r) => r.status !== "not_sent").length;
   const received = rows.filter((r) => r.status === "reviewed").length;
   const rate = sent > 0 ? Math.round((received / sent) * 100) : 0;
 
+  const refreshRealReviews = async () => {
+    const [reviewsResponse, patientsResponse, appointmentsResponse] = await Promise.all([
+      getReviews(),
+      patientsApi.list(),
+      appointmentsApi.getAppointments().catch(() => [] as ApiAppointment[]),
+    ]);
+    const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
+    const appointmentsById = Object.fromEntries(appointmentsResponse.map((appointment) => [appointment.id, appointment]));
+    setPatients(patientsResponse);
+    setReviews(reviewsResponse);
+    setAppointments(appointmentsResponse);
+    setRows(reviewsResponse.map((review) => toReviewRow(review, patientsById, appointmentsById)));
+  };
+
   useEffect(() => {
-    setRows(
-      demoMode
-        ? demoReviews.map((review) => ({
-            id: review.id,
-            patientId: review.id,
-            patient: review.patient,
-            phone: review.phone,
-            visitDate: review.visitDate,
-            status: review.status as ReviewRequest["status"],
-            sentAt: review.sentAt,
-          }))
-        : reviews,
-    );
+    let active = true;
+
+    if (demoMode) {
+      setLoading(false);
+      setPatients(demoPatients);
+      setReviews([]);
+      setAppointments([]);
+      setRows(toDemoRows());
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoading(true);
+    Promise.all([getReviews(), patientsApi.list(), appointmentsApi.getAppointments().catch(() => [] as ApiAppointment[])])
+      .then(([reviewsResponse, patientsResponse, appointmentsResponse]) => {
+        if (!active) return;
+        const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
+        const appointmentsById = Object.fromEntries(appointmentsResponse.map((appointment) => [appointment.id, appointment]));
+        setPatients(patientsResponse);
+        setReviews(reviewsResponse);
+        setAppointments(appointmentsResponse);
+        setRows(reviewsResponse.map((review) => toReviewRow(review, patientsById, appointmentsById)));
+      })
+      .catch(() => {
+        if (!active) return;
+        setPatients([]);
+        setReviews([]);
+        setAppointments([]);
+        setRows([]);
+        toast.error("Impossible de charger les demandes d'avis.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [demoMode]);
 
   useEffect(() => {
@@ -61,30 +147,101 @@ function ReviewsPage() {
     };
   }, []);
 
-  const sendReview = (id: string) => {
+  const sendReview = async (id: string) => {
     const request = rows.find((r) => r.id === id);
+    if (!request?.phone) {
+      toast.error("Numéro WhatsApp du patient manquant.");
+      return;
+    }
+
     const message = fillWhatsAppTemplate(template, {
       Patient: request?.patient,
       "Google Review Link": reviewLink,
       Nom: request?.patient,
       Lien: reviewLink,
     });
-    if (!openWhatsAppMessage(request?.phone, message)) return;
-    setRows((current) =>
-      current.map((r) => (r.id === id && r.status === "not_sent" ? { ...r, status: "sent", sentAt: todayISO() } : r)),
-    );
+    if (!openWhatsAppMessage(request.phone, message)) return;
+    setRows((current) => current.map((r) => (r.id === id && r.status === "not_sent" ? { ...r, status: "sent", sentAt: todayISO() } : r)));
+
+    if (!demoMode) {
+      markReviewSent(id)
+        .then((updated) => {
+          setRows((current) =>
+            current.map((r) => (r.id === id ? { ...r, status: normalizeReviewStatus(updated.status), sentAt: updated.sent_at?.slice(0, 10) || todayISO() } : r)),
+          );
+          toast.success("Demande d'avis mise à jour.");
+        })
+        .catch(() => toast.error("Impossible de mettre à jour la demande d'avis."));
+
+      whatsappApi
+        .create({
+          patient_id: request.patientId,
+          type: "Demande avis Google",
+          message,
+          phone: request.phone,
+          status: "Préparé",
+        })
+        .catch(() => undefined);
+    }
   };
 
-  const sendAll = () => {
+  const latestAppointmentForPatient = (patientId: string) =>
+    appointments
+      .filter((appointment) => appointment.patient_id === patientId)
+      .sort((a, b) => b.appointment_date.localeCompare(a.appointment_date))[0];
+
+  const sendAll = async () => {
+    if (!demoMode) {
+      const patientsWithPhone = patients.filter((patient) => patient.phone?.trim());
+      if (patientsWithPhone.length === 0) {
+        toast.error("Aucun patient avec numéro WhatsApp disponible.");
+        return;
+      }
+
+      const alreadyPreparedToday = new Set(
+        reviews
+          .filter((review) => review.created_at?.slice(0, 10) === todayISO())
+          .map((review) => review.patient_id)
+          .filter(Boolean),
+      );
+      const eligiblePatients = patientsWithPhone.filter((patient) => !alreadyPreparedToday.has(patient.id));
+
+      try {
+        await Promise.all(
+          eligiblePatients.map((patient) => {
+            const appointment = latestAppointmentForPatient(patient.id);
+            const payload: ReviewPayload = {
+              patient_id: patient.id,
+              appointment_id: appointment?.id ?? null,
+              status: "Non envoyé",
+            };
+            console.log("Review request payload before submit", payload);
+            return createReviewRequest(payload);
+          }),
+        );
+        await refreshRealReviews();
+        toast.success(`${eligiblePatients.length} demandes d’avis préparées.`);
+      } catch {
+        toast.error("Impossible de préparer les demandes d'avis.");
+      }
+      return;
+    }
+
     const pendingRows = rows.filter((r) => r.status === "not_sent");
     pendingRows.forEach((request) => {
+      if (!request.phone) {
+        toast.error("Numéro WhatsApp du patient manquant.");
+        return;
+      }
+
       const message = fillWhatsAppTemplate(template, {
         Patient: request.patient,
         "Google Review Link": reviewLink,
         Nom: request.patient,
         Lien: reviewLink,
       });
-      openWhatsAppMessage(request.phone, message);
+      if (!openWhatsAppMessage(request.phone, message)) return;
+
     });
     setRows((current) => current.map((r) => (r.status === "not_sent" ? { ...r, status: "sent", sentAt: todayISO() } : r)));
     toast.success(`${pendingRows.length} demandes préparées`);
@@ -135,7 +292,17 @@ function ReviewsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">Chargement des demandes d'avis...</TableCell>
+                  </TableRow>
+                )}
+                {!loading && rows.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">Aucune demande d'avis à afficher.</TableCell>
+                  </TableRow>
+                )}
+                {!loading && rows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>
                       <div className="font-medium">{r.patient}</div>

@@ -99,6 +99,14 @@ class ReviewIn(ApiModel):
     status: str = "Non envoyé"
 
 
+class ReviewUpdate(ApiModel):
+    patient_id: UUID | None = None
+    appointment_id: UUID | None = None
+    status: str | None = None
+    sent_at: str | None = None
+    reviewed_at: str | None = None
+
+
 class PrescriptionItemIn(ApiModel):
     medication_name: str = Field(min_length=1)
     dosage: str | None = None
