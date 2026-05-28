@@ -89,7 +89,7 @@ class RecallIn(ApiModel):
     recall_type: str | None = None
     last_visit_date: date | None = None
     next_recall_date: date
-    status: str = "Prévu"
+    status: str = "Planifié"
     notes: str | None = None
 
 

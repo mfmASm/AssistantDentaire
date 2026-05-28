@@ -14,10 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, recallTone, recallLabel } from "@/components/status-badge";
-import { recalls, formatDate, type Recall } from "@/lib/demo-data";
+import { formatDate, type Recall, type RecallStatus } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
-import { DEMO_MODE_EVENT, demoRecalls, isDemoMode } from "@/lib/demoMode";
-import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { DEMO_MODE_EVENT, demoPatients, demoRecalls, isDemoMode } from "@/lib/demoMode";
+import { openWhatsAppMessage } from "@/lib/whatsapp";
+import { patientsApi, type ApiPatient } from "@/services/patientsApi";
+import { createRecall, getRecalls, type ApiRecall, type RecallPayload } from "@/services/recallsApi";
+import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/recalls")({
   head: () => ({
@@ -55,45 +58,129 @@ const addDays = (iso: string, days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+const statusOptions: { value: RecallStatus; label: string; api: string }[] = [
+  { value: "scheduled", label: "Planifié", api: "Planifié" },
+  { value: "due_soon", label: "Bientôt", api: "Bientôt" },
+  { value: "overdue", label: "En retard", api: "En retard" },
+  { value: "completed", label: "Terminé", api: "Terminé" },
+];
+
+const normalizeRecallStatus = (status?: string): RecallStatus => {
+  if (status === "Planifié" || status === "Planifie" || status === "Prévu" || status === "Prevu" || status === "scheduled") return "scheduled";
+  if (status === "Bientôt" || status === "Bientot" || status === "due_soon") return "due_soon";
+  if (status === "En retard" || status === "overdue") return "overdue";
+  if (status === "Terminé" || status === "Termine" || status === "completed") return "completed";
+  return "scheduled";
+};
+
+const toApiStatus = (status: RecallStatus) => statusOptions.find((option) => option.value === status)?.api ?? "Planifié";
+
+const toDemoRows = (): Recall[] =>
+  demoRecalls.map((recall) => {
+    const patient = demoPatients.find((p) => p.full_name === recall.patient);
+    return {
+      id: recall.id,
+      patientId: patient?.id ?? recall.id,
+      patient: recall.patient,
+      phone: recall.phone,
+      type: recall.type,
+      lastVisit: todayISO(),
+      nextRecall: recall.nextRecall,
+      status: normalizeRecallStatus(recall.status),
+    };
+  });
+
+const toRecallRow = (recall: ApiRecall, patientsById: Record<string, ApiPatient>): Recall => {
+  const patient = patientsById[recall.patient_id];
+  return {
+    id: recall.id,
+    patientId: recall.patient_id,
+    patient: patient?.full_name ?? "Patient inconnu",
+    phone: patient?.phone ?? "",
+    type: recall.recall_type || "Rappel",
+    lastVisit: recall.last_visit_date || recall.created_at?.slice(0, 10) || todayISO(),
+    nextRecall: recall.next_recall_date,
+    status: normalizeRecallStatus(recall.status),
+  };
+};
+
+const emptyForm = () => ({
+  patientId: "",
+  phone: "",
+  type: "",
+  lastVisit: todayISO(),
+  nextRecall: "",
+  status: "scheduled" as RecallStatus,
+  priority: "Normale",
+  channel: "WhatsApp",
+  owner: "Assistante",
+  notes: "",
+});
+
 function RecallsPage() {
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
-  const [rows, setRows] = useState<Recall[]>(recalls);
+  const [rows, setRows] = useState<Recall[]>(() => (isDemoMode() ? toDemoRows() : []));
+  const [patients, setPatients] = useState<ApiPatient[]>(() => (isDemoMode() ? demoPatients : []));
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [form, setForm] = useState({
-    patient: "",
-    phone: "",
-    type: "",
-    lastVisit: todayISO(),
-    nextRecall: "",
-    priority: "Normale",
-    channel: "WhatsApp",
-    owner: "Assistante",
-    notes: "",
-  });
+  const [form, setForm] = useState(emptyForm);
 
   const filtered = rows.filter((r) => {
-    if (q && !r.patient.toLowerCase().includes(q.toLowerCase())) return false;
+    if (q && !`${r.patient} ${r.type}`.toLowerCase().includes(q.toLowerCase())) return false;
     if (filter !== "all" && r.status !== filter) return false;
     return true;
   });
 
+  const fetchRealRecallRows = async () => {
+    const [recallsResponse, patientsResponse] = await Promise.all([getRecalls(), patientsApi.list()]);
+    const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
+    return {
+      patientsResponse,
+      rows: recallsResponse.map((recall) => toRecallRow(recall, patientsById)),
+    };
+  };
+
+  const loadRealRecalls = async () => {
+    const { patientsResponse, rows: recallRows } = await fetchRealRecallRows();
+    setPatients(patientsResponse);
+    setRows(recallRows);
+  };
+
   useEffect(() => {
-    setRows(
-      demoMode
-        ? demoRecalls.map((recall) => ({
-            id: recall.id,
-            patientId: recall.id,
-            patient: recall.patient,
-            phone: recall.phone,
-            type: recall.type,
-            lastVisit: todayISO(),
-            nextRecall: recall.nextRecall,
-            status: recall.status as Recall["status"],
-          }))
-        : recalls,
-    );
+    let active = true;
+
+    if (demoMode) {
+      setLoading(false);
+      setPatients(demoPatients);
+      setRows(toDemoRows());
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoading(true);
+    fetchRealRecallRows()
+      .then(({ patientsResponse, rows: recallRows }) => {
+        if (!active) return;
+        setPatients(patientsResponse);
+        setRows(recallRows);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPatients([]);
+        setRows([]);
+        toast.error("Impossible de charger les rappels.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [demoMode]);
 
   useEffect(() => {
@@ -106,41 +193,76 @@ function RecallsPage() {
     };
   }, []);
 
-  const addRecall = () => {
+  const resetForm = () => setForm(emptyForm());
+
+  const addRecall = async () => {
+    const selectedPatient = patients.find((patient) => patient.id === form.patientId);
+    if (!selectedPatient) {
+      toast.error("Ajoutez d’abord un patient avant de créer un rappel.");
+      return;
+    }
+
+    if (!demoMode) setSaving(true);
+
     const recall: Recall = {
       id: `r${Date.now()}`,
-      patientId: `p${Date.now()}`,
-      patient: form.patient.trim(),
-      phone: form.phone.trim(),
+      patientId: selectedPatient.id,
+      patient: selectedPatient.full_name,
+      phone: form.phone.trim() || selectedPatient.phone || "",
       type: form.type.trim(),
       lastVisit: form.lastVisit,
       nextRecall: form.nextRecall,
-      status: form.priority === "Urgente" ? "due_soon" : "scheduled",
+      status: form.status,
     };
-    setRows((current) => [recall, ...current]);
-    setForm({
-      patient: "",
-      phone: "",
-      type: "",
-      lastVisit: todayISO(),
-      nextRecall: "",
-      priority: "Normale",
-      channel: "WhatsApp",
-      owner: "Assistante",
-      notes: "",
-    });
-    setIsAddOpen(false);
-    toast.success("Rappel cree");
+
+    try {
+      if (demoMode) {
+        setRows((current) => [recall, ...current]);
+      } else {
+        const notes = `Priorité: ${form.priority} | Canal: ${form.channel} | Responsable: ${form.owner} | Note: ${form.notes.trim()}`;
+        const payload: RecallPayload = {
+          patient_id: selectedPatient.id,
+          recall_type: form.type.trim(),
+          last_visit_date: form.lastVisit,
+          next_recall_date: form.nextRecall,
+          status: toApiStatus(form.status),
+          notes,
+        };
+        console.log("Recall payload before submit", payload);
+        await createRecall(payload);
+        await loadRealRecalls();
+      }
+      resetForm();
+      setIsAddOpen(false);
+      toast.success("Rappel ajouté avec succès.");
+    } catch {
+      toast.error("Impossible d'ajouter le rappel.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const sendRecall = (id: string) => {
+  const sendRecall = async (id: string) => {
     const recall = rows.find((r) => r.id === id);
-    const message = fillWhatsAppTemplate(whatsappTemplates.recall, {
-      Patient: recall?.patient,
-      "Type de rappel": recall?.type,
-    });
-    if (!openWhatsAppMessage(recall?.phone, message)) return;
-    setRows((current) => current.map((r) => (r.id === id ? { ...r, status: "sent" } : r)));
+    if (!recall?.phone) {
+      toast.error("Numéro WhatsApp du patient manquant.");
+      return;
+    }
+
+    const message = `Bonjour ${recall.patient}, votre rappel de suivi dentaire est prévu pour ${recall.type}. Nous vous invitons à contacter le cabinet pour planifier votre visite.`;
+    if (!openWhatsAppMessage(recall.phone, message)) return;
+
+    if (!demoMode) {
+      whatsappApi
+        .create({
+          patient_id: recall.patientId,
+          type: "Rappel recall",
+          message,
+          phone: recall.phone,
+          status: "Préparé",
+        })
+        .catch(() => undefined);
+    }
   };
 
   return (
@@ -156,15 +278,35 @@ function RecallsPage() {
             onOpenChange={setIsAddOpen}
             onSubmit={addRecall}
             submitLabel="Creer"
-            disabled={!form.patient.trim() || !form.phone.trim() || !form.type.trim() || !form.lastVisit || !form.nextRecall}
+            disabled={saving || !form.patientId || !form.type.trim() || !form.lastVisit || !form.nextRecall || patients.length === 0}
             trigger={
               <Button size="sm">
                 <CalendarPlus className="size-4" /> Nouveau rappel
               </Button>
             }
           >
+            {!demoMode && !loading && patients.length === 0 && (
+              <p className="text-sm text-muted-foreground">Ajoutez d’abord un patient avant de créer un rappel.</p>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2"><Label htmlFor="recall-patient">Patient</Label><Input id="recall-patient" value={form.patient} onChange={(e) => setForm((f) => ({ ...f, patient: e.target.value }))} /></div>
+              <div className="grid gap-2">
+                <Label>Patient</Label>
+                <Select
+                  value={form.patientId}
+                  onValueChange={(patientId) => {
+                    const selected = patients.find((patient) => patient.id === patientId);
+                    setForm((f) => ({ ...f, patientId, phone: selected?.phone || "" }));
+                  }}
+                  disabled={patients.length === 0}
+                >
+                  <SelectTrigger><SelectValue placeholder="Choisir un patient" /></SelectTrigger>
+                  <SelectContent>
+                    {patients.map((patient) => (
+                      <SelectItem key={patient.id} value={patient.id}>{patient.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid gap-2"><Label htmlFor="recall-phone">Telephone</Label><Input id="recall-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></div>
             </div>
             <div className="grid gap-2">
@@ -197,6 +339,17 @@ function RecallsPage() {
               <div className="grid gap-2"><Label htmlFor="recall-date">Prochain rappel</Label><Input id="recall-date" type="date" value={form.nextRecall} onChange={(e) => setForm((f) => ({ ...f, nextRecall: e.target.value }))} /></div>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-2">
+                <Label>Statut</Label>
+                <Select value={form.status} onValueChange={(status) => setForm((f) => ({ ...f, status: status as RecallStatus }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map((status) => (
+                      <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid gap-2">
                 <Label>Priorite</Label>
                 <Select value={form.priority} onValueChange={(priority) => setForm((f) => ({ ...f, priority }))}>
@@ -250,7 +403,7 @@ function RecallsPage() {
         <StatCard label="Planifies" value={String(rows.filter((r) => r.status === "scheduled").length)} icon={<BellRing className="size-5" />} accent="info" />
         <StatCard label="Bientot dus" value={String(rows.filter((r) => r.status === "due_soon").length)} icon={<Clock className="size-5" />} accent="warning" />
         <StatCard label="En retard" value={String(rows.filter((r) => r.status === "overdue").length)} icon={<AlertTriangle className="size-5" />} accent="danger" />
-        <StatCard label="Termines ce mois" value="14" icon={<CheckCircle2 className="size-5" />} accent="success" />
+        <StatCard label="Termines ce mois" value={String(rows.filter((r) => r.status === "completed").length)} icon={<CheckCircle2 className="size-5" />} accent="success" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -275,7 +428,17 @@ function RecallsPage() {
               <Table>
                 <TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Type</TableHead><TableHead className="hidden md:table-cell">Derniere visite</TableHead><TableHead>Prochain rappel</TableHead><TableHead>Statut</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {filtered.map((r) => (
+                  {loading && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">Chargement des rappels...</TableCell>
+                    </TableRow>
+                  )}
+                  {!loading && filtered.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">Aucun rappel à afficher.</TableCell>
+                    </TableRow>
+                  )}
+                  {!loading && filtered.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell><div className="font-medium">{r.patient}</div><div className="text-xs text-muted-foreground">{r.phone}</div></TableCell>
                       <TableCell className="text-sm">{r.type}</TableCell>

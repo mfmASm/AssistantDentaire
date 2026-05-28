@@ -75,7 +75,7 @@ create table if not exists recalls (
   recall_type text,
   last_visit_date date,
   next_recall_date date,
-  status text default 'Prévu',
+  status text default 'Planifié',
   notes text,
   created_at timestamp default now()
 );
