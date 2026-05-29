@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { getNotifications, type AppNotification } from "@/lib/notifications";
 import { getRoleLabel } from "@/lib/roles";
 import { DEMO_MODE_EVENT, isDemoMode } from "@/lib/demoMode";
+import { REMEMBER_SESSION_KEY, SAVED_EMAIL_KEY } from "@/lib/supabase";
 import { authApi, type AuthMe } from "@/services/authApi";
 import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
@@ -237,7 +238,11 @@ function AppShell() {
   };
 
   const handleLogout = async () => {
+    const shouldKeepSavedEmail = window.localStorage.getItem(REMEMBER_SESSION_KEY) === "true";
     await authApi.logout();
+    if (!shouldKeepSavedEmail) {
+      window.localStorage.removeItem(SAVED_EMAIL_KEY);
+    }
     setCurrentUser(null);
     setIsAuthorized(false);
     toast.success("Déconnexion réussie.");

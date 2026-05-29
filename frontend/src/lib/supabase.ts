@@ -3,6 +3,8 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SESSION_KEY = "dentalpilot-supabase-session";
 const ACCESS_TOKEN_KEY = "dentalpilot-access-token";
 const REFRESH_TOKEN_KEY = "dentalpilot-refresh-token";
+export const REMEMBER_SESSION_KEY = "dentaflow_remember_session";
+export const SAVED_EMAIL_KEY = "dentaflow_saved_email";
 
 export type SupabaseAuthUser = {
   id: string;
@@ -44,24 +46,37 @@ function authHeaders(token?: string) {
   };
 }
 
+function getSessionStorageTarget() {
+  return window.localStorage.getItem(REMEMBER_SESSION_KEY) === "true" ? window.localStorage : window.sessionStorage;
+}
+
+function removeSessionFromStorage(storage: Storage) {
+  storage.removeItem(SESSION_KEY);
+  storage.removeItem(ACCESS_TOKEN_KEY);
+  storage.removeItem(REFRESH_TOKEN_KEY);
+}
+
 function persistSession(session: SupabaseSession) {
   const expiresAt = session.expires_at || (session.expires_in ? Math.floor(Date.now() / 1000) + session.expires_in : undefined);
   const normalized = { ...session, expires_at: expiresAt };
+  const storage = getSessionStorageTarget();
+  const otherStorage = storage === window.localStorage ? window.sessionStorage : window.localStorage;
 
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(normalized));
-  if (normalized.access_token) window.localStorage.setItem(ACCESS_TOKEN_KEY, normalized.access_token);
-  if (normalized.refresh_token) window.localStorage.setItem(REFRESH_TOKEN_KEY, normalized.refresh_token);
+  removeSessionFromStorage(otherStorage);
+  storage.setItem(SESSION_KEY, JSON.stringify(normalized));
+  if (normalized.access_token) storage.setItem(ACCESS_TOKEN_KEY, normalized.access_token);
+  if (normalized.refresh_token) storage.setItem(REFRESH_TOKEN_KEY, normalized.refresh_token);
 
   return normalized;
 }
 
 function readStoredSession(): SupabaseSession | null {
   try {
-    const stored = window.localStorage.getItem(SESSION_KEY);
+    const stored = window.sessionStorage.getItem(SESSION_KEY) || window.localStorage.getItem(SESSION_KEY);
     if (stored) return JSON.parse(stored);
 
-    const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
-    const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
+    const accessToken = window.sessionStorage.getItem(ACCESS_TOKEN_KEY) || window.localStorage.getItem(ACCESS_TOKEN_KEY);
+    const refreshToken = window.sessionStorage.getItem(REFRESH_TOKEN_KEY) || window.localStorage.getItem(REFRESH_TOKEN_KEY);
     if (accessToken || refreshToken) return { access_token: accessToken || undefined, refresh_token: refreshToken || undefined };
   } catch {
     return null;
@@ -71,9 +86,8 @@ function readStoredSession(): SupabaseSession | null {
 }
 
 export function clearSupabaseSession() {
-  window.localStorage.removeItem(SESSION_KEY);
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+  removeSessionFromStorage(window.localStorage);
+  removeSessionFromStorage(window.sessionStorage);
 }
 
 async function authRequest<T>(path: string, payload: unknown, token?: string): Promise<T> {

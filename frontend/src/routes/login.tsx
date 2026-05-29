@@ -4,9 +4,10 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SupabaseAuthError } from "@/lib/supabase";
+import { REMEMBER_SESSION_KEY, SAVED_EMAIL_KEY, SupabaseAuthError } from "@/lib/supabase";
 import { authApi } from "@/services/authApi";
 
 export const Route = createFileRoute("/login")({
@@ -23,12 +24,18 @@ function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberSession, setRememberSession] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const loginButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let active = true;
+    const savedEmail = window.localStorage.getItem(SAVED_EMAIL_KEY);
+    const savedRememberPreference = window.localStorage.getItem(REMEMBER_SESSION_KEY) === "true";
+
+    if (savedEmail) setEmail(savedEmail);
+    setRememberSession(savedRememberPreference);
 
     authApi.session()
       .then(async (session) => {
@@ -56,7 +63,9 @@ function LoginPage() {
     if (!validateCredentials()) return;
     setIsSubmitting(true);
     try {
+      saveRememberPreference();
       await authApi.signIn(email, password);
+      saveEmailPreference();
       toast.success("Connexion reussie");
       navigate({ to: "/" });
     } catch (error) {
@@ -71,7 +80,9 @@ function LoginPage() {
     if (!validateCredentials({ requireStrongPassword: true })) return;
     setIsSubmitting(true);
     try {
+      saveRememberPreference();
       const session = await authApi.signUp(email, password);
+      saveEmailPreference();
       if (session.access_token) {
         toast.success("Essai gratuit cree. Vous pouvez continuer.");
         navigate({ to: "/" });
@@ -107,6 +118,21 @@ function LoginPage() {
     }
 
     return true;
+  };
+
+  const saveRememberPreference = () => {
+    window.localStorage.setItem(REMEMBER_SESSION_KEY, rememberSession ? "true" : "false");
+    if (!rememberSession) {
+      window.localStorage.removeItem(SAVED_EMAIL_KEY);
+    }
+  };
+
+  const saveEmailPreference = () => {
+    if (rememberSession) {
+      window.localStorage.setItem(SAVED_EMAIL_KEY, email.trim());
+    } else {
+      window.localStorage.removeItem(SAVED_EMAIL_KEY);
+    }
   };
 
   return (
@@ -155,6 +181,20 @@ function LoginPage() {
                 >
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
+              </div>
+            </div>
+            <div className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+              <Checkbox
+                id="remember-session"
+                checked={rememberSession}
+                onCheckedChange={(checked) => setRememberSession(checked === true)}
+                className="mt-0.5"
+              />
+              <div className="space-y-0.5 leading-none">
+                <Label htmlFor="remember-session" className="text-sm font-medium">
+                  Garder ma session ouverte
+                </Label>
+                <p className="text-xs text-muted-foreground">Recommandé sur votre ordinateur personnel uniquement.</p>
               </div>
             </div>
             <Button ref={loginButtonRef} type="submit" className="w-full" disabled={isSubmitting}>Se connecter</Button>
