@@ -91,13 +91,26 @@ def duplicate_prescription(prescription_id: str, current_user: AuthUser):
     items = original.pop("items", [])
     for key in ("id", "created_at", "updated_at", "pdf_url"):
         original.pop(key, None)
+    original["cabinet_id"] = current_user.cabinet_id
+    original["doctor_id"] = current_user.id
     original["reference"] = make_reference("ORD")
     original["status"] = "Brouillon"
     original["prescription_date"] = date.today().isoformat()
+    original["pdf_url"] = None
     try:
         created = get_supabase().table("prescriptions").insert(original).execute().data[0]
         if items:
-            copied = [{k: v for k, v in item.items() if k not in {"id", "created_at"}} | {"prescription_id": created["id"]} for item in items]
+            copied = [
+                {
+                    "prescription_id": created["id"],
+                    "medication_name": item.get("medication_name"),
+                    "dosage": item.get("dosage"),
+                    "frequency": item.get("frequency"),
+                    "duration": item.get("duration"),
+                    "instructions": item.get("instructions"),
+                }
+                for item in items
+            ]
             get_supabase().table("prescription_items").insert(copied).execute()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc

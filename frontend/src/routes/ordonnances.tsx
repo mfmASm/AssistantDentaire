@@ -858,7 +858,7 @@ function OrdonnancesPage() {
       medicaments: ordonnance.medicaments.map((medication) => ({ ...medication, id: `med-${Date.now()}-${medication.id}` })),
     };
     setRows((current) => [copy, ...current]);
-    toast.success("Ordonnance dupliquée.");
+    toast.success("Ordonnance dupliquée avec succès.");
   };
 
   const sendWhatsApp = async (ordonnance: Ordonnance) => {

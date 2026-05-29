@@ -621,10 +621,13 @@ function MedicalCertificatesPage() {
       id: `cert-${Date.now()}`,
       reference: `CERT-${new Date().getFullYear()}-${String(rows.length + 1).padStart(3, "0")}`,
       date: todayISO(),
+      dateDebut: certificate.dateDebut ? todayISO() : "",
+      dateFin: certificate.dateDebut ? addDays(new Date(), Math.max(parseInt(certificate.dureeRepos, 10) - 1 || 0, 0)).toISOString().slice(0, 10) : certificate.dateFin,
       statut: "Brouillon" as CertificateStatus,
+      pdfUrl: null,
     };
     setRows((current) => [copy, ...current]);
-    toast.success("Certificat médical dupliqué.");
+    toast.success("Certificat dupliqué avec succès.");
   };
 
   const sendWhatsApp = async (certificate: MedicalCertificate) => {

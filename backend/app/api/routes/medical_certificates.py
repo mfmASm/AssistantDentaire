@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, timedelta
+import re
 
 from fastapi import APIRouter, HTTPException
 
@@ -36,6 +37,15 @@ def _get_certificate(certificate_id: str, cabinet_id: str):
     if not response.data:
         raise HTTPException(status_code=404, detail="Not found")
     return response.data
+
+
+def _rest_duration_days(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.search(r"\d+", value)
+    if not match:
+        return None
+    return int(match.group(0))
 
 
 @router.get("")
@@ -110,13 +120,31 @@ def delete_certificate(certificate_id: str, current_user: AuthUser):
 
 @router.post("/{certificate_id}/duplicate")
 def duplicate_certificate(certificate_id: str, current_user: AuthUser):
-    cert = _get_certificate(certificate_id, current_user.cabinet_id)
-    for key in ("id", "created_at", "updated_at", "pdf_url"):
-        cert.pop(key, None)
-    cert["reference"] = make_reference("CERT")
-    cert["status"] = "Brouillon"
-    cert["certificate_date"] = date.today().isoformat()
-    cert["doctor_id"] = current_user.id
+    original = _get_certificate(certificate_id, current_user.cabinet_id)
+    today = date.today()
+    start_date = today.isoformat() if original.get("start_date") else None
+    duration_days = _rest_duration_days(original.get("rest_duration"))
+    end_date = original.get("end_date")
+    if start_date and duration_days:
+        end_date = (today + timedelta(days=max(duration_days - 1, 0))).isoformat()
+
+    cert = {
+        "cabinet_id": current_user.cabinet_id,
+        "doctor_id": current_user.id,
+        "patient_id": original.get("patient_id"),
+        "reference": make_reference("CERT"),
+        "certificate_date": today.isoformat(),
+        "certificate_type": original.get("certificate_type"),
+        "motif": original.get("motif"),
+        "start_date": start_date,
+        "end_date": end_date,
+        "rest_duration": original.get("rest_duration"),
+        "observations": original.get("observations"),
+        "internal_notes": original.get("internal_notes"),
+        "certificate_text": original.get("certificate_text"),
+        "status": "Brouillon",
+        "pdf_url": None,
+    }
     try:
         response = get_supabase().table("medical_certificates").insert(cert).execute()
     except Exception as exc:
