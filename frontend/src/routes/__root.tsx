@@ -32,6 +32,7 @@ import { getNotifications, type AppNotification } from "@/lib/notifications";
 import { getRoleLabel } from "@/lib/roles";
 import { DEMO_MODE_EVENT, isDemoMode } from "@/lib/demoMode";
 import { authApi, type AuthMe } from "@/services/authApi";
+import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
 function NotFoundComponent() {
   return (
@@ -102,7 +103,8 @@ function AppShell() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const isAuthPage = pathname === "/login";
   const isPublicPage = isAuthPage || pathname === "/sitemap.xml";
-  const notifications = useMemo(() => getNotifications(), []);
+  const demoNotifications = useMemo(() => getNotifications(), []);
+  const [realNotifications, setRealNotifications] = useState<AppNotification[]>([]);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -112,6 +114,27 @@ function AppShell() {
   useEffect(() => {
     console.log("Root route rendered");
   }, []);
+
+  useEffect(() => {
+    if (demoMode || !isAuthorized || isPublicPage) {
+      setRealNotifications([]);
+      return;
+    }
+
+    let active = true;
+    getDashboardSummary()
+      .then((summary) => {
+        if (active) setRealNotifications(buildRealNotifications(summary));
+      })
+      .catch((error) => {
+        console.error(error);
+        if (active) setRealNotifications([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [demoMode, isAuthorized, isPublicPage]);
 
   useEffect(() => {
     let active = true;
@@ -198,6 +221,7 @@ function AppShell() {
     }
   }, []);
 
+  const notifications = demoMode ? demoNotifications : realNotifications;
   const unreadNotifications = notifications.filter((notification) => !readNotificationIds.includes(notification.id));
   const notificationCount = unreadNotifications.length;
 
@@ -342,6 +366,46 @@ function getCabinetName(user: AuthMe | null) {
   const cabinet = user?.cabinet;
   if (cabinet && typeof cabinet === "object" && "name" in cabinet && typeof cabinet.name === "string") return cabinet.name;
   return "Cabinet dentaire";
+}
+
+function buildRealNotifications(summary: DashboardSummary): AppNotification[] {
+  const notifications: AppNotification[] = [];
+  const now = new Date().toISOString();
+
+  if (summary.overdue_payments_count > 0) {
+    notifications.push({
+      id: `real-overdue-payments-${summary.overdue_payments_count}`,
+      title: "Paiements en retard",
+      description: `${summary.overdue_payments_count} paiement(s) à relancer`,
+      href: "/payments",
+      tone: "danger",
+      createdAt: now,
+    });
+  }
+
+  if (summary.recalls_due_count > 0) {
+    notifications.push({
+      id: `real-due-recalls-${summary.recalls_due_count}`,
+      title: "Rappels patients à traiter",
+      description: `${summary.recalls_due_count} rappel(s) arrivé(s) à échéance`,
+      href: "/recalls",
+      tone: "warning",
+      createdAt: now,
+    });
+  }
+
+  if (summary.review_requests_pending > 0) {
+    notifications.push({
+      id: `real-pending-reviews-${summary.review_requests_pending}`,
+      title: "Avis Google à envoyer",
+      description: `${summary.review_requests_pending} demande(s) d'avis en attente`,
+      href: "/reviews",
+      tone: "info",
+      createdAt: now,
+    });
+  }
+
+  return notifications;
 }
 
 function NotificationRow({ notification, isRead }: { notification: AppNotification; isRead: boolean }) {

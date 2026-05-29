@@ -13,10 +13,11 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { whatsappTemplates } from "@/lib/whatsapp";
 import { canManageCabinetSettings, canManageTeam, getRoleLabel } from "@/lib/roles";
 import { isDemoMode, setDemoMode } from "@/lib/demoMode";
 import { authApi, type AuthMe } from "@/services/authApi";
+import { getCurrentCabinet, updateCurrentCabinet, type Cabinet } from "@/services/cabinetsApi";
+import { getSettings, updateSetting, type SettingPayload } from "@/services/settingsApi";
 import { teamApi, type TeamInvitePayload, type TeamMember } from "@/services/teamApi";
 
 export const Route = createFileRoute("/settings")({
@@ -45,9 +46,79 @@ const automationDefaults = [
   { key: "noshow", label: "Notification SMS pour les no-show", on: false },
 ];
 
+const DEMO_SETTINGS_STORAGE_KEY = "dentaflow_demo_settings";
+
+const defaultClinic = {
+  name: "Cabinet Dentaire Atlas",
+  dentist: "Dr. Safaa M'gaassy",
+  phone: "+212 522 45 67 89",
+  whatsapp: "+212 661 23 45 67",
+  reviewLink: "https://g.page/r/cabinet-mgassy-casablanca/review",
+  address: "12 Rue Ibn Sina, Maarif - Casablanca",
+  city: "Casablanca",
+};
+
+const defaultMessages = {
+  appointment: "Bonjour [Patient], nous vous rappelons votre rendez-vous au cabinet prévu le [Date] à [Heure]. Merci de confirmer votre présence.",
+  payment: "Bonjour [Patient], nous vous rappelons qu’un solde de [Montant] MAD reste à régler pour votre traitement: [Traitement]. Merci de nous contacter si besoin.",
+  review: "Bonjour [Patient], merci pour votre visite au cabinet. Votre avis nous aide beaucoup. Vous pouvez laisser un avis ici: [Google Review Link]. Merci beaucoup.",
+  recall: "Bonjour [Patient], votre rappel de suivi dentaire est prévu pour [Type de rappel]. Nous vous invitons à contacter le cabinet pour planifier votre visite.",
+  prescription: "Bonjour [Patient], votre ordonnance est prête. Veuillez joindre le PDF téléchargé avant l’envoi.",
+  certificate: "Bonjour [Patient], votre certificat médical est prêt. Veuillez joindre le PDF téléchargé avant l’envoi.",
+};
+
+type ClinicSettings = typeof defaultClinic;
+type MessageSettings = typeof defaultMessages;
+type RecallRuleSettings = Record<string, string>;
+type AutomationSettings = Record<string, boolean>;
+
+type StoredSettings = {
+  clinic?: Partial<ClinicSettings>;
+  messages?: Partial<MessageSettings>;
+  whatsappMode?: string;
+  rules?: RecallRuleSettings;
+  automations?: AutomationSettings;
+};
+
+const templateValue = (messages: MessageSettings) => ({
+  appointment_reminder: messages.appointment,
+  payment_reminder: messages.payment,
+  review_request: messages.review,
+  patient_recall: messages.recall,
+  prescription: messages.prescription,
+  medical_certificate: messages.certificate,
+});
+
+const messagesFromTemplateValue = (value: unknown): MessageSettings => {
+  const data = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    appointment: String(data.appointment_reminder || defaultMessages.appointment),
+    payment: String(data.payment_reminder || defaultMessages.payment),
+    review: String(data.review_request || defaultMessages.review),
+    recall: String(data.patient_recall || defaultMessages.recall),
+    prescription: String(data.prescription || defaultMessages.prescription),
+    certificate: String(data.medical_certificate || defaultMessages.certificate),
+  };
+};
+
+const cabinetToClinic = (cabinet: Cabinet): ClinicSettings => ({
+  name: cabinet.name || defaultClinic.name,
+  dentist: cabinet.dentist_name || defaultClinic.dentist,
+  phone: cabinet.phone || defaultClinic.phone,
+  whatsapp: cabinet.whatsapp_number || defaultClinic.whatsapp,
+  reviewLink: cabinet.google_review_link || defaultClinic.reviewLink,
+  address: cabinet.address || defaultClinic.address,
+  city: cabinet.city || defaultClinic.city,
+});
+
+const getStoredSetting = <T,>(settings: SettingPayload[], key: string): T | undefined =>
+  settings.find((setting) => setting.key === key)?.value as T | undefined;
+
 function SettingsPage() {
   const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isTeamLoading, setIsTeamLoading] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
@@ -56,28 +127,15 @@ function SettingsPage() {
     email: "",
     role: "secretary",
   });
-  const [clinic, setClinic] = useState({
-    name: "Cabinet Dentaire Atlas",
-    dentist: "Dr. Safaa M'gaassy",
-    phone: "+212 522 45 67 89",
-    whatsapp: "+212 661 23 45 67",
-    reviewLink: "https://g.page/r/cabinet-mgassy-casablanca/review",
-    address: "12 Rue Ibn Sina, Maarif - Casablanca",
-  });
-  const [messages, setMessages] = useState({
-    appointment: whatsappTemplates.appointment,
-    payment: whatsappTemplates.payment,
-    review: whatsappTemplates.review,
-    recall: whatsappTemplates.recall,
-    prescription: whatsappTemplates.prescription,
-    certificate: whatsappTemplates.certificate,
-  });
+  const [clinic, setClinic] = useState<ClinicSettings>(defaultClinic);
+  const [messages, setMessages] = useState<MessageSettings>(defaultMessages);
   const [whatsappMode, setWhatsappMode] = useState("manual");
   const [rules, setRules] = useState(Object.fromEntries(recallRules.map((r) => [r.key, r.default])));
   const [automations, setAutomations] = useState(Object.fromEntries(automationDefaults.map((a) => [a.key, a.on])));
   const [demoModeEnabled, setDemoModeEnabled] = useState(() => isDemoMode());
-  const canCurrentUserManageTeam = canManageTeam(currentUser?.role);
-  const canCurrentUserManageDemoMode = canManageCabinetSettings(currentUser?.role);
+  const canCurrentUserManageTeam = !demoModeEnabled && canManageTeam(currentUser?.role);
+  const canCurrentUserManageDemoMode = demoModeEnabled || canManageCabinetSettings(currentUser?.role);
+  const canCurrentUserManageSettings = demoModeEnabled || canManageCabinetSettings(currentUser?.role);
 
   const loadTeam = async () => {
     setIsTeamLoading(true);
@@ -92,24 +150,122 @@ function SettingsPage() {
     }
   };
 
+  const loadDemoSettings = () => {
+    const raw = window.localStorage.getItem(DEMO_SETTINGS_STORAGE_KEY);
+    const stored: StoredSettings = raw ? JSON.parse(raw) : {};
+    setClinic({ ...defaultClinic, ...stored.clinic });
+    setMessages({ ...defaultMessages, ...stored.messages });
+    setWhatsappMode(stored.whatsappMode || "manual");
+    setRules({ ...Object.fromEntries(recallRules.map((r) => [r.key, r.default])), ...stored.rules });
+    setAutomations({ ...Object.fromEntries(automationDefaults.map((a) => [a.key, a.on])), ...stored.automations });
+    setTeamMembers([]);
+    setCurrentUser(null);
+  };
+
+  const loadRealSettings = async () => {
+    setIsSettingsLoading(true);
+    try {
+      const user = await authApi.me();
+      setCurrentUser(user);
+
+      const [cabinet, settings] = await Promise.all([
+        getCurrentCabinet(),
+        getSettings().catch((error) => {
+          console.error(error);
+          toast.error("Impossible de charger les paramètres du cabinet.");
+          return [];
+        }),
+      ]);
+
+      setClinic(cabinetToClinic(cabinet));
+      setMessages(messagesFromTemplateValue(getStoredSetting(settings, "whatsapp_templates")));
+      setRules({
+        ...Object.fromEntries(recallRules.map((r) => [r.key, r.default])),
+        ...getStoredSetting<RecallRuleSettings>(settings, "recall_rules"),
+      });
+
+      const preferences = getStoredSetting<Record<string, unknown>>(settings, "notification_preferences") || {};
+      setWhatsappMode(String(preferences.whatsapp_mode || "manual"));
+      setAutomations({
+        ...Object.fromEntries(automationDefaults.map((a) => [a.key, a.on])),
+        ...(preferences.automations as AutomationSettings | undefined),
+      });
+
+      if (canManageTeam(user.role)) loadTeam();
+      else setTeamMembers([]);
+    } catch (error) {
+      console.error(error);
+      toast.error("Impossible de charger les paramètres du cabinet.");
+    } finally {
+      setIsSettingsLoading(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
-    authApi.me().then((user) => {
+    if (demoModeEnabled) {
+      try {
+        loadDemoSettings();
+      } catch (error) {
+        console.error(error);
+      }
+      return () => {
+        active = false;
+      };
+    }
+
+    loadRealSettings().then(() => {
       if (!active) return;
-      setCurrentUser(user);
-      if (canManageTeam(user.role)) loadTeam();
-    }).catch((error) => {
-      console.error(error);
     });
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [demoModeEnabled]);
 
-  const saveSettings = () => {
-    toast.success(`Parametres enregistres pour ${clinic.name}`);
+  const saveSettings = async () => {
+    if (!canCurrentUserManageSettings) {
+      toast.error("Seul le docteur propriétaire peut modifier ces paramètres.");
+      return;
+    }
+
+    if (demoModeEnabled) {
+      window.localStorage.setItem(DEMO_SETTINGS_STORAGE_KEY, JSON.stringify({ clinic, messages, whatsappMode, rules, automations }));
+      toast.success(`Paramètres enregistrés pour ${clinic.name}`);
+      return;
+    }
+
+    setIsSavingSettings(true);
+    try {
+      await updateCurrentCabinet({
+        name: clinic.name,
+        dentist_name: clinic.dentist,
+        phone: clinic.phone,
+        whatsapp_number: clinic.whatsapp,
+        google_review_link: clinic.reviewLink,
+        address: clinic.address,
+        city: clinic.city,
+      });
+      toast.success("Paramètres du cabinet enregistrés avec succès.");
+
+      await updateSetting("whatsapp_templates", templateValue(messages));
+      toast.success("Modèles WhatsApp enregistrés avec succès.");
+
+      await updateSetting("recall_rules", rules);
+      toast.success("Règles de rappel enregistrées avec succès.");
+
+      await updateSetting("notification_preferences", {
+        whatsapp_mode: whatsappMode,
+        automations,
+      });
+      toast.success("Préférences enregistrées avec succès.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Impossible d'enregistrer les paramètres.");
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const updateDemoMode = (enabled: boolean) => {
@@ -147,38 +303,38 @@ function SettingsPage() {
       <PageHeader
         title="Parametres"
         description="Configurez votre cabinet et automatisez vos communications"
-        actions={<Button size="sm" onClick={saveSettings}>Enregistrer</Button>}
+        actions={<Button size="sm" onClick={saveSettings} disabled={isSettingsLoading || isSavingSettings}>{isSavingSettings ? "Enregistrement..." : "Enregistrer"}</Button>}
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-4 lg:columns-2 lg:gap-4 lg:space-y-0">
         {canCurrentUserManageDemoMode && (
-          <Card>
-            <CardHeader>
+          <Card className="mb-4 break-inside-avoid self-start">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <CardTitle>Mode démo</CardTitle>
-                  <CardDescription>
+                  <CardDescription className="mt-1">
                     Activez ce mode pour afficher des données fictives destinées aux captures d’écran, présentations commerciales et démonstrations.
                   </CardDescription>
                 </div>
-                <Badge variant="secondary" className={demoModeEnabled ? "bg-warning/20 text-warning-foreground" : ""}>
+                <Badge variant="secondary" className={`shrink-0 px-2 py-0.5 text-[10px] ${demoModeEnabled ? "bg-warning/20 text-warning-foreground" : ""}`}>
                   {demoModeEnabled ? "Mode démo activé" : "Mode réel"}
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+            <CardContent className="space-y-2 pt-0">
+              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
                 <Label htmlFor="demo-mode" className="font-normal">Activer le mode démo</Label>
                 <Switch id="demo-mode" checked={demoModeEnabled} onCheckedChange={updateDemoMode} />
               </div>
-              <p className="text-sm text-muted-foreground">
-                Les données du mode démo sont fictives et ne sont pas enregistrées dans Supabase.
+              <p className="text-xs leading-5 text-muted-foreground">
+                Les données du mode démo sont fictives et ne sont pas enregistrées dans votre compte réel.
               </p>
             </CardContent>
           </Card>
         )}
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader><CardTitle>Informations du cabinet</CardTitle><CardDescription>Affichees sur les factures et messages</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <SettingInput label="Nom du cabinet" value={clinic.name} onChange={(name) => setClinic((c) => ({ ...c, name }))} />
@@ -189,10 +345,11 @@ function SettingsPage() {
             </div>
             <SettingInput label="Lien Google Reviews" value={clinic.reviewLink} onChange={(reviewLink) => setClinic((c) => ({ ...c, reviewLink }))} />
             <SettingInput label="Adresse" value={clinic.address} onChange={(address) => setClinic((c) => ({ ...c, address }))} />
+            <SettingInput label="Ville" value={clinic.city} onChange={(city) => setClinic((c) => ({ ...c, city }))} />
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -235,7 +392,7 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader><CardTitle>Modeles de messages</CardTitle><CardDescription>Utilises pour WhatsApp et SMS</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <MessageInput label="Rappel de rendez-vous" value={messages.appointment} onChange={(appointment) => setMessages((m) => ({ ...m, appointment }))} />
@@ -245,7 +402,7 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>WhatsApp</CardTitle>
             <CardDescription>Configurez le mode d’envoi WhatsApp du cabinet.</CardDescription>
@@ -271,7 +428,7 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Automatisation WhatsApp Cloud API</CardTitle>
             <CardDescription>
@@ -286,7 +443,7 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader><CardTitle>Regles de rappel</CardTitle><CardDescription>Intervalles automatiques par type de soin (mois)</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             {recallRules.map((r) => (
@@ -307,7 +464,7 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader><CardTitle>Automatisations</CardTitle><CardDescription>Activez les envois automatiques</CardDescription></CardHeader>
           <CardContent className="space-y-1">
             {automationDefaults.map((a, i) => (

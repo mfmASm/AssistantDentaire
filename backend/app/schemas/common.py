@@ -170,4 +170,4 @@ class WhatsAppLogIn(ApiModel):
 
 
 class SettingIn(ApiModel):
-    value: dict[str, Any]
+    value: Any

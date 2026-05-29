@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
@@ -7,14 +7,44 @@ from app.schemas.common import SettingIn, TemplateIn
 router = APIRouter(tags=["settings"])
 
 
+def _require_admin(current_user: AuthUser):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul le docteur propriétaire peut modifier ces paramètres.")
+
+
 @router.get("/settings")
 def list_settings(current_user: AuthUser):
     return get_supabase().table("settings").select("*").eq("cabinet_id", current_user.cabinet_id).execute().data or []
 
 
+@router.get("/settings/{key}")
+def get_setting(key: str, current_user: AuthUser):
+    response = (
+        get_supabase()
+        .table("settings")
+        .select("*")
+        .eq("cabinet_id", current_user.cabinet_id)
+        .eq("key", key)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return None
+    return response.data[0]
+
+
 @router.put("/settings/{key}")
 def upsert_setting(key: str, payload: SettingIn, current_user: AuthUser):
-    response = get_supabase().table("settings").upsert({"cabinet_id": current_user.cabinet_id, "key": key, "value": payload.value}, on_conflict="cabinet_id,key").execute()
+    _require_admin(current_user)
+    response = (
+        get_supabase()
+        .table("settings")
+        .upsert(
+            {"cabinet_id": current_user.cabinet_id, "key": key, "value": payload.value},
+            on_conflict="cabinet_id,key",
+        )
+        .execute()
+    )
     return response.data[0] if response.data else None
 
 

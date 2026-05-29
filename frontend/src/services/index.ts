@@ -1,6 +1,7 @@
 export * from "@/services/api";
 export * from "@/services/appointmentsApi";
 export * from "@/services/authApi";
+export * from "@/services/cabinetsApi";
 export * from "@/services/dashboardApi";
 export * from "@/services/favoriteMedicationsApi";
 export * from "@/services/medicalCertificatesApi";
