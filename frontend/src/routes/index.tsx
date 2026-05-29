@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   CalendarDays,
   Wallet,
@@ -25,15 +26,8 @@ import {
   apptTone, apptLabel,
   paymentTone, paymentLabel,
   recallTone, recallLabel,
-  reviewTone, reviewLabel,
 } from "@/components/status-badge";
 import {
-  appointments as baseAppointments,
-  payments as basePayments,
-  recalls as baseRecalls,
-  reviews as baseReviews,
-  newLeads,
-  patients as basePatients,
   formatMAD, formatDate,
   type Appointment,
   type Payment,
@@ -52,6 +46,7 @@ import {
   isDemoMode,
 } from "@/lib/demoMode";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -79,6 +74,60 @@ const appointmentStatusMap = {
   "Annulé": "cancelled",
   "No-show": "no_show",
 } as const;
+
+const emptyDashboardSummary: DashboardSummary = {
+  appointments_today_count: 0,
+  upcoming_appointments_count: 0,
+  patients_total: 0,
+  new_patients_this_month: 0,
+  payments_collected_today: 0,
+  payments_collected_month: 0,
+  unpaid_balances_total: 0,
+  overdue_payments_count: 0,
+  recalls_due_count: 0,
+  review_requests_pending: 0,
+  review_requests_sent: 0,
+  prescriptions_today_count: 0,
+  certificates_today_count: 0,
+  recent_patients: [],
+  upcoming_appointments: [],
+  overdue_payments: [],
+  due_recalls: [],
+  recent_activity: [],
+};
+
+const normalizeStatus = (status?: string | null) =>
+  (status || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+const toAppointmentStatus = (status?: string | null): Appointment["status"] => {
+  const normalized = normalizeStatus(status);
+  if (normalized.includes("termine") || normalized === "completed") return "completed";
+  if (normalized.includes("annule") || normalized === "cancelled" || normalized === "canceled") return "cancelled";
+  if (normalized.includes("attente") || normalized === "waiting") return "waiting";
+  if (normalized.includes("no-show") || normalized.includes("no show")) return "no_show";
+  return "confirmed";
+};
+
+const toPaymentStatus = (status?: string | null, remaining = 0): Payment["status"] => {
+  const normalized = normalizeStatus(status);
+  if (!normalized) return "unpaid";
+  if (remaining <= 0 || normalized === "paye" || normalized === "paid") return "paid";
+  if (normalized === "partiel" || normalized === "partial") return "partial";
+  return "unpaid";
+};
+
+const toRecallStatus = (status?: string | null): Recall["status"] => {
+  const normalized = normalizeStatus(status);
+  if (normalized === "termine" || normalized === "completed") return "completed";
+  if (normalized === "envoye" || normalized === "sent") return "sent";
+  if (normalized.includes("retard") || normalized === "overdue") return "overdue";
+  if (normalized.includes("planifie") || normalized === "scheduled") return "scheduled";
+  return "due_soon";
+};
 
 const toDashboardPatient = (patient: (typeof demoPatients)[number]): Patient => ({
   id: patient.id,
@@ -134,14 +183,63 @@ const toDashboardReview = (review: (typeof demoReviews)[number]): ReviewRequest 
   sentAt: review.sentAt,
 });
 
+const toRealDashboardPatient = (patient: DashboardSummary["recent_patients"][number]): Patient => ({
+  id: patient.id,
+  name: patient.full_name || "Patient",
+  phone: patient.phone || "",
+  email: "",
+  status: "active",
+  lastVisit: patient.created_at || todayISO(),
+});
+
+const toRealDashboardAppointment = (appointment: DashboardSummary["upcoming_appointments"][number]): Appointment => ({
+  id: appointment.id,
+  time: appointment.start_time || "",
+  patientId: appointment.patient_id || "",
+  patient: appointment.patient_name || "Patient",
+  treatment: appointment.treatment_type || "",
+  status: toAppointmentStatus(appointment.status),
+  paymentStatus: toPaymentStatus(appointment.payment_status, appointment.payment_status ? 1 : 0),
+  followUp: Boolean(appointment.follow_up_status && normalizeStatus(appointment.follow_up_status) !== "aucun suivi"),
+});
+
+const toRealDashboardPayment = (payment: DashboardSummary["overdue_payments"][number]): Payment => {
+  const remaining = Number(payment.remaining_amount || 0);
+  return {
+    id: payment.id,
+    patientId: payment.patient_id || "",
+    patient: payment.patient_name || "Patient",
+    treatment: payment.treatment || "",
+    total: remaining,
+    paid: 0,
+    dueDate: payment.due_date || todayISO(),
+    status: toPaymentStatus(payment.status, remaining),
+  };
+};
+
+const toRealDashboardRecall = (recall: DashboardSummary["due_recalls"][number]): Recall => ({
+  id: recall.id,
+  patientId: recall.patient_id || "",
+  patient: recall.patient_name || "Patient",
+  phone: recall.phone || "",
+  type: recall.recall_type || "",
+  lastVisit: todayISO(),
+  nextRecall: recall.next_recall_date || todayISO(),
+  status: toRecallStatus(recall.status),
+});
+
 function Dashboard() {
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
-  const patients = demoMode ? demoPatients.map(toDashboardPatient) : basePatients;
-  const appointments = demoMode ? demoAppointments.map(toDashboardAppointment) : baseAppointments;
-  const payments = demoMode ? demoPayments.map(toDashboardPayment) : basePayments;
-  const recalls = demoMode ? demoRecalls.map(toDashboardRecall) : baseRecalls;
-  const reviews = demoMode ? demoReviews.map(toDashboardReview) : baseReviews;
-  const todayAppts = appointments;
+  const [summary, setSummary] = useState<DashboardSummary>(emptyDashboardSummary);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState(false);
+
+  const patients = demoMode ? demoPatients.map(toDashboardPatient) : summary.recent_patients.map(toRealDashboardPatient);
+  const appointments = demoMode ? demoAppointments.map(toDashboardAppointment) : summary.upcoming_appointments.map(toRealDashboardAppointment);
+  const payments = demoMode ? demoPayments.map(toDashboardPayment) : summary.overdue_payments.map(toRealDashboardPayment);
+  const recalls = demoMode ? demoRecalls.map(toDashboardRecall) : summary.due_recalls.map(toRealDashboardRecall);
+  const reviews = demoMode ? demoReviews.map(toDashboardReview) : [];
+  const todayAppts = demoMode ? appointments : appointments.filter((appointment) => summary.upcoming_appointments.find((item) => item.id === appointment.id)?.appointment_date === todayISO());
   const unpaid = payments.filter((p) => p.status !== "paid");
   const todayCollected = payments
     .filter((p) => p.dueDate <= todayISO() && p.status === "paid")
@@ -150,6 +248,17 @@ function Dashboard() {
   const upcomingRecalls = recalls.filter((r) => r.status !== "completed").slice(0, 5);
   const toSendReviews = reviews.filter((r) => r.status === "not_sent");
   const followUps = appointments.filter((a) => a.followUp);
+  const appointmentsTodayCount = demoMode ? todayAppts.length : summary.appointments_today_count;
+  const completedTodayCount = demoMode ? todayAppts.filter((a) => a.status === "completed").length : 0;
+  const confirmedTodayCount = demoMode ? todayAppts.filter((a) => a.status === "confirmed").length : summary.upcoming_appointments_count;
+  const collectedToday = demoMode ? todayCollected : summary.payments_collected_today;
+  const collectedMonth = demoMode ? monthRevenue : summary.payments_collected_month;
+  const unpaidTotal = demoMode ? unpaid.reduce((s, p) => s + (p.total - p.paid), 0) : summary.unpaid_balances_total;
+  const unpaidCount = demoMode ? unpaid.length : summary.overdue_payments_count;
+  const pendingReviewCount = demoMode ? toSendReviews.length : summary.review_requests_pending;
+  const recentLeads = demoMode
+    ? demoPatients.slice(-3).map((patient) => ({ id: patient.id, name: patient.full_name, phone: patient.phone || "", source: "Démo" }))
+    : summary.recent_patients.slice(0, 3).map((patient) => ({ id: patient.id, name: patient.full_name || "Patient", phone: patient.phone || "", source: patient.status || "Patient" }));
   const patientPhone = (patientId?: string, patientName?: string) =>
     patients.find((patient) => patient.id === patientId || patient.name === patientName)?.phone;
 
@@ -163,8 +272,40 @@ function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (demoMode) {
+      setSummary(emptyDashboardSummary);
+      setDashboardError(false);
+      setDashboardLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDashboardLoading(true);
+    setDashboardError(false);
+    getDashboardSummary()
+      .then((data) => {
+        if (!cancelled) setSummary(data);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSummary(emptyDashboardSummary);
+          setDashboardError(true);
+          toast.error("Impossible de charger les statistiques du dashboard.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDashboardLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [demoMode]);
+
   const sendQuickWhatsApp = () => {
     const target = followUps[0] ?? appointments[0];
+    if (!target) return;
     const message = fillWhatsAppTemplate(whatsappTemplates.appointment, {
       Patient: target.patient,
       Date: formatDate(todayISO()),
@@ -218,30 +359,30 @@ function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="RDV aujourd'hui"
-          value={String(todayAppts.length)}
-          hint={`${todayAppts.filter((a) => a.status === "completed").length} terminés · ${todayAppts.filter((a) => a.status === "confirmed").length} à venir`}
+          value={dashboardLoading ? "..." : String(appointmentsTodayCount)}
+          hint={`${completedTodayCount} terminés · ${confirmedTodayCount} à venir`}
           icon={<CalendarDays className="size-5" />}
           accent="primary"
         />
         <StatCard
           label="Encaissé aujourd'hui"
-          value={formatMAD(todayCollected)}
-          trend="+12% vs hier"
+          value={dashboardLoading ? "..." : formatMAD(collectedToday)}
+          trend={dashboardError ? "Données indisponibles" : undefined}
           trendTone="up"
           icon={<Wallet className="size-5" />}
           accent="success"
         />
         <StatCard
           label="Impayés en cours"
-          value={formatMAD(unpaid.reduce((s, p) => s + (p.total - p.paid), 0))}
-          hint={`${unpaid.length} patients concernés`}
+          value={dashboardLoading ? "..." : formatMAD(unpaidTotal)}
+          hint={`${unpaidCount} patients concernés`}
           icon={<AlertCircle className="size-5" />}
           accent="danger"
         />
         <StatCard
           label="Revenu du mois"
-          value={formatMAD(monthRevenue)}
-          trend="+18% vs avril"
+          value={dashboardLoading ? "..." : formatMAD(collectedMonth)}
+          trend={demoMode ? "+18% vs avril" : undefined}
           trendTone="up"
           icon={<TrendingUp className="size-5" />}
           accent="info"
@@ -384,7 +525,7 @@ function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Star className="size-4 text-warning" /> Avis Google à envoyer</CardTitle>
-            <CardDescription>{toSendReviews.length} demandes en attente</CardDescription>
+            <CardDescription>{pendingReviewCount} demandes en attente</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {toSendReviews.map((r) => (
@@ -398,7 +539,7 @@ function Dashboard() {
                 </Button>
               </div>
             ))}
-            {toSendReviews.length === 0 && <p className="text-sm text-muted-foreground">Aucune demande en attente.</p>}
+            {pendingReviewCount === 0 && <p className="text-sm text-muted-foreground">Aucune demande en attente.</p>}
           </CardContent>
         </Card>
 
@@ -426,7 +567,7 @@ function Dashboard() {
             <CardDescription>Récemment ajoutés</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {newLeads.map((l) => (
+            {recentLeads.map((l) => (
               <div key={l.id} className="flex items-center justify-between rounded-xl border p-2.5">
                 <div>
                   <p className="text-sm font-medium">{l.name}</p>
