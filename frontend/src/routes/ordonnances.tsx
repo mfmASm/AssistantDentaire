@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { currentMonthPrefix, relativeISO, todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoFavoriteMedications, demoPatients, demoPrescriptions, isDemoMode } from "@/lib/demoMode";
 import { canFinalizeMedicalDocuments, normalizeRole, type AppRole } from "@/lib/roles";
-import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { authApi, type AuthMe } from "@/services/authApi";
 import {
   createFavoriteMedication,
@@ -59,7 +59,6 @@ import {
   type PrescriptionPayload,
   updatePrescription,
 } from "@/services/prescriptionsApi";
-import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/ordonnances")({
   head: () => ({
@@ -867,7 +866,7 @@ function OrdonnancesPage() {
     toast.info("WhatsApp Web va s’ouvrir avec le message pré-rempli. Pour envoyer un document, téléchargez le PDF puis joignez-le manuellement dans WhatsApp.");
     toast.info("Veuillez joindre le PDF téléchargé dans WhatsApp avant l’envoi.");
     const message = fillWhatsAppTemplate(whatsappTemplates.prescription, { Patient: ordonnance.patient });
-    if (!openWhatsAppMessage(ordonnance.telephone, message)) return;
+    if (!logAndOpenWhatsapp({ patientId: ordonnance.patientId, type: "prescription", phone: ordonnance.telephone, message })) return;
     if (!demoMode && ordonnance.id) {
       try {
         await markPrescriptionSent(ordonnance.id);
@@ -875,15 +874,6 @@ function OrdonnancesPage() {
       } catch {
         toast.error("Impossible de mettre à jour le statut de l'ordonnance.");
       }
-      whatsappApi
-        .create({
-          patient_id: ordonnance.patientId,
-          type: "Ordonnance",
-          message,
-          phone: ordonnance.telephone,
-          status: "Préparé",
-        })
-        .catch(() => undefined);
       return;
     }
     const sentOrdonnance = { ...ordonnance, id, reference, statut: "Envoyée" as PrescriptionStatus };

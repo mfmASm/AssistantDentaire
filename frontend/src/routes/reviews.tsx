@@ -14,11 +14,10 @@ import { StatusBadge, reviewTone, reviewLabel } from "@/components/status-badge"
 import { formatDate, type ReviewRequest, type ReviewStatus } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoPatients, demoReviews, isDemoMode } from "@/lib/demoMode";
-import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { appointmentsApi, type ApiAppointment } from "@/services/appointmentsApi";
 import { patientsApi, type ApiPatient } from "@/services/patientsApi";
 import { createReviewRequest, getReviews, markReviewSent, type ApiReviewRequest, type ReviewPayload } from "@/services/reviewsApi";
-import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/reviews")({
   head: () => ({
@@ -160,7 +159,7 @@ function ReviewsPage() {
       Nom: request?.patient,
       Lien: reviewLink,
     });
-    if (!openWhatsAppMessage(request.phone, message)) return;
+    if (!logAndOpenWhatsapp({ patientId: request.patientId, type: "review_request", phone: request.phone, message })) return;
     setRows((current) => current.map((r) => (r.id === id && r.status === "not_sent" ? { ...r, status: "sent", sentAt: todayISO() } : r)));
 
     if (!demoMode) {
@@ -173,15 +172,6 @@ function ReviewsPage() {
         })
         .catch(() => toast.error("Impossible de mettre à jour la demande d'avis."));
 
-      whatsappApi
-        .create({
-          patient_id: request.patientId,
-          type: "Demande avis Google",
-          message,
-          phone: request.phone,
-          status: "Préparé",
-        })
-        .catch(() => undefined);
     }
   };
 
@@ -240,7 +230,7 @@ function ReviewsPage() {
         Nom: request.patient,
         Lien: reviewLink,
       });
-      if (!openWhatsAppMessage(request.phone, message)) return;
+      if (!logAndOpenWhatsapp({ patientId: request.patientId, type: "review_request", phone: request.phone, message })) return;
 
     });
     setRows((current) => current.map((r) => (r.status === "not_sent" ? { ...r, status: "sent", sentAt: todayISO() } : r)));

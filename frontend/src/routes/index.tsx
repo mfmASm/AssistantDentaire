@@ -45,7 +45,7 @@ import {
   demoReviews,
   isDemoMode,
 } from "@/lib/demoMode";
-import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
 export const Route = createFileRoute("/")({
@@ -311,7 +311,7 @@ function Dashboard() {
       Date: formatDate(todayISO()),
       Heure: target.time,
     });
-    openWhatsAppMessage(patientPhone(target.patientId, target.patient), message);
+    logAndOpenWhatsapp({ patientId: target.patientId, type: "appointment_reminder", phone: patientPhone(target.patientId, target.patient), message });
   };
 
   const sendPaymentFollowUp = (payment: (typeof payments)[number]) => {
@@ -320,7 +320,7 @@ function Dashboard() {
       Montant: payment.total - payment.paid,
       Traitement: payment.treatment,
     });
-    openWhatsAppMessage(patientPhone(payment.patientId, payment.patient), message);
+    logAndOpenWhatsapp({ patientId: payment.patientId, type: "payment_reminder", phone: patientPhone(payment.patientId, payment.patient), message });
   };
 
   const sendRecallFollowUp = (recall: (typeof recalls)[number]) => {
@@ -328,7 +328,7 @@ function Dashboard() {
       Patient: recall.patient,
       "Type de rappel": recall.type,
     });
-    openWhatsAppMessage(recall.phone, message);
+    logAndOpenWhatsapp({ patientId: recall.patientId, type: "patient_recall", phone: recall.phone, message });
   };
 
   const sendReviewRequest = (request: (typeof reviews)[number]) => {
@@ -336,7 +336,7 @@ function Dashboard() {
       Patient: request.patient,
       "Google Review Link": "https://g.page/r/cabinet-atlas-casablanca/review",
     });
-    openWhatsAppMessage(request.phone, message);
+    logAndOpenWhatsapp({ patientId: request.patientId, type: "review_request", phone: request.phone, message });
   };
 
   return (

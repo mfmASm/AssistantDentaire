@@ -19,7 +19,7 @@ import { StatusBadge, patientTone, patientLabel } from "@/components/status-badg
 import { formatDate, type Patient } from "@/lib/demo-data";
 import { formatShortDate } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoPatients, isDemoMode } from "@/lib/demoMode";
-import { openWhatsAppMessage } from "@/lib/whatsapp";
+import { logAndOpenWhatsapp } from "@/lib/whatsapp";
 import { patientsApi, toUiPatient, type PatientPayload, type PatientRecord } from "@/services/patientsApi";
 
 export const Route = createFileRoute("/patients")({
@@ -144,7 +144,7 @@ function PatientsPage() {
       return;
     }
     const message = `Bonjour ${patient.name}, nous vous contactons depuis le cabinet. Comment pouvons-nous vous aider ?`;
-    if (!openWhatsAppMessage(patient?.phone, message)) return;
+    if (!logAndOpenWhatsapp({ patientId: id, type: "patient_message", phone: patient.phone, message })) return;
     setRows((current) =>
       current.map((p) => (p.id === id ? { ...p, notes: `Message WhatsApp envoye le ${formatShortDate()}` } : p)),
     );

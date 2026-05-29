@@ -20,10 +20,9 @@ import { StatusBadge, apptTone, apptLabel, paymentTone, paymentLabel } from "@/c
 import { formatDate, type AppointmentStatus, type PaymentStatus } from "@/lib/demo-data";
 import { todayISO, formatLongDate } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoAppointments, demoPatients, isDemoMode } from "@/lib/demoMode";
-import { openWhatsAppMessage } from "@/lib/whatsapp";
+import { logAndOpenWhatsapp } from "@/lib/whatsapp";
 import { appointmentsApi, type ApiAppointment, type AppointmentPayload } from "@/services/appointmentsApi";
 import { patientsApi, toUiPatient, type PatientRecord } from "@/services/patientsApi";
-import { whatsappApi } from "@/services/whatsappApi";
 
 type FollowUpStatus =
   | "none"
@@ -338,15 +337,7 @@ function AppointmentsPage() {
       return;
     }
     const message = `Bonjour ${appointment.patient}, nous vous rappelons votre rendez-vous au cabinet prévu le ${formatDate(appointment.date)} à ${appointment.time}. Merci de confirmer votre présence.`;
-    if (!openWhatsAppMessage(appointment.phone, message)) return;
-    if (demoMode) return;
-    whatsappApi.create({
-      patient_id: appointment.patientId,
-      type: "appointment_reminder",
-      message,
-      phone: appointment.phone,
-      status: "Préparé",
-    }).catch((error) => console.warn("WhatsApp log failed", error));
+    logAndOpenWhatsapp({ patientId: appointment.patientId, type: "appointment_reminder", phone: appointment.phone, message });
   };
 
   const saveFollowUp = async (appointmentId: string, followUpStatus: FollowUpStatus, followUpNote?: string) => {
@@ -413,10 +404,8 @@ function AppointmentsPage() {
       toast.error("Numéro WhatsApp du patient manquant.");
       return;
     }
-    openWhatsAppMessage(
-      appointment.phone,
-      `Bonjour ${appointment.patient}, nous vous contactons concernant votre rendez-vous au Cabinet Atlas — Casablanca. Merci de nous confirmer votre disponibilité.`,
-    );
+    const message = `Bonjour ${appointment.patient}, nous vous contactons concernant votre rendez-vous au Cabinet Atlas - Casablanca. Merci de nous confirmer votre disponibilité.`;
+    logAndOpenWhatsapp({ patientId: appointment.patientId, type: "appointment_reminder", phone: appointment.phone, message });
   };
 
   const deleteAppointment = async (appointment: AppointmentRow) => {

@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { addDays, currentMonthPrefix, formatShortDate, relativeISO, todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoCertificates, demoPatients, isDemoMode } from "@/lib/demoMode";
 import { canFinalizeMedicalDocuments, normalizeRole, type AppRole } from "@/lib/roles";
-import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { authApi, type AuthMe } from "@/services/authApi";
 import {
   createMedicalCertificate,
@@ -47,7 +47,6 @@ import {
   updateMedicalCertificate,
 } from "@/services/medicalCertificatesApi";
 import { patientsApi, type ApiPatient } from "@/services/patientsApi";
-import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/certificats-medicaux")({
   head: () => ({
@@ -636,7 +635,7 @@ function MedicalCertificatesPage() {
     toast.info("WhatsApp Web va s’ouvrir avec le message pré-rempli. Pour envoyer un document, téléchargez le PDF puis joignez-le manuellement dans WhatsApp.");
     toast.info("Veuillez joindre le PDF téléchargé dans WhatsApp avant l’envoi.");
     const message = fillWhatsAppTemplate(whatsappTemplates.certificate, { Patient: certificate.patient });
-    if (!openWhatsAppMessage(certificate.telephone, message)) return;
+    if (!logAndOpenWhatsapp({ patientId: certificate.patientId, type: "medical_certificate", phone: certificate.telephone, message })) return;
     if (!demoMode && certificate.id) {
       try {
         await markMedicalCertificateSent(certificate.id);
@@ -644,15 +643,6 @@ function MedicalCertificatesPage() {
       } catch {
         toast.error("Impossible de mettre à jour le statut du certificat.");
       }
-      whatsappApi
-        .create({
-          patient_id: certificate.patientId,
-          type: "Certificat",
-          message,
-          phone: certificate.telephone,
-          status: "Préparé",
-        })
-        .catch(() => undefined);
       return;
     }
     const sentCertificate = { ...certificate, id, reference, statut: "Envoyé" as CertificateStatus };

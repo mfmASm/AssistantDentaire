@@ -18,10 +18,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatMAD, formatDate } from "@/lib/demo-data";
 import { todayISO, formatShortDate } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoPatients, demoPayments, isDemoMode } from "@/lib/demoMode";
-import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { patientsApi, toUiPatient, type PatientRecord } from "@/services/patientsApi";
 import { paymentsApi, type ApiPayment, type PaymentPayload } from "@/services/paymentsApi";
-import { whatsappApi } from "@/services/whatsappApi";
 
 type PaymentStatus = "paid" | "partial" | "unpaid" | "overdue";
 
@@ -293,18 +292,11 @@ function PaymentsPage() {
       Montant: payment.remaining,
       Traitement: payment.treatment,
     });
-    if (!openWhatsAppMessage(payment.phone, message)) return;
+    if (!logAndOpenWhatsapp({ patientId: payment.patientId, type: "payment_reminder", phone: payment.phone, message })) return;
     if (demoMode) {
       setRows((current) => current.map((p) => (p.id === payment.id ? { ...p, notes: `Relance envoyee le ${formatShortDate()}` } : p)));
       return;
     }
-    whatsappApi.create({
-      patient_id: payment.patientId,
-      type: "payment_reminder",
-      message,
-      phone: payment.phone,
-      status: "Préparé",
-    }).catch((error) => console.warn("WhatsApp log failed", error));
     setRows((current) => current.map((p) => (p.id === payment.id ? { ...p, notes: `Relance envoyee le ${formatShortDate()}` } : p)));
   };
 

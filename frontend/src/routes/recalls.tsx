@@ -17,10 +17,9 @@ import { StatusBadge, recallTone, recallLabel } from "@/components/status-badge"
 import { formatDate, type Recall, type RecallStatus } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoPatients, demoRecalls, isDemoMode } from "@/lib/demoMode";
-import { openWhatsAppMessage } from "@/lib/whatsapp";
+import { logAndOpenWhatsapp } from "@/lib/whatsapp";
 import { patientsApi, type ApiPatient } from "@/services/patientsApi";
 import { createRecall, getRecalls, type ApiRecall, type RecallPayload } from "@/services/recallsApi";
-import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/recalls")({
   head: () => ({
@@ -250,19 +249,8 @@ function RecallsPage() {
     }
 
     const message = `Bonjour ${recall.patient}, votre rappel de suivi dentaire est prévu pour ${recall.type}. Nous vous invitons à contacter le cabinet pour planifier votre visite.`;
-    if (!openWhatsAppMessage(recall.phone, message)) return;
+    logAndOpenWhatsapp({ patientId: recall.patientId, type: "patient_recall", phone: recall.phone, message });
 
-    if (!demoMode) {
-      whatsappApi
-        .create({
-          patient_id: recall.patientId,
-          type: "Rappel recall",
-          message,
-          phone: recall.phone,
-          status: "Préparé",
-        })
-        .catch(() => undefined);
-    }
   };
 
   return (

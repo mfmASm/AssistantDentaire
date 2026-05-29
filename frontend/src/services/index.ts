@@ -12,3 +12,4 @@ export * from "@/services/recallsApi";
 export * from "@/services/reviewsApi";
 export * from "@/services/settingsApi";
 export * from "@/services/whatsappApi";
+export * from "@/services/whatsappLogsApi";
