@@ -1,105 +1,130 @@
 # DentalPilot
 
-Project structure:
-
-```text
-backend/   FastAPI + Supabase API, SQL schema, services
-frontend/  Existing React/Vite/Tailwind app
-```
-
-The frontend app content and visual design are kept unchanged. Backend connectivity is added through a service layer under `frontend/src/services`.
-
-## Run Backend
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-## Run Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Update README.md with simple run instructions only.
-
-Do not change any app code.
-Only edit README.md.
-
-Add a section called:
+Private dental practice management app with a FastAPI backend and React/Vite frontend.
 
 ## How to run the app locally
 
-Explain that I need two terminals:
+Use two terminals.
 
-Terminal 1 — Backend:
+Terminal 1 - Backend:
 
+```bash
 cd backend
 venv\Scripts\activate
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
 Backend runs on:
+
+```text
 http://localhost:8000
+```
 
 Test backend:
+
+```text
 http://localhost:8000/health
+```
 
 Expected:
+
+```json
 {"status":"ok"}
+```
 
-Terminal 2 — Frontend:
+Terminal 2 - Frontend:
 
+```bash
 cd frontend
 npm install
 npm run dev
+```
 
 Frontend runs on the URL shown in the terminal, usually:
-http://localhost:8080
 
-Also add:
+```text
+http://localhost:8080
+```
 
 ## Environment files
 
-Backend needs:
-backend/.env
+Backend needs `backend/.env`.
 
-Frontend needs:
-frontend/.env
+Required backend variables:
 
-Do not commit real .env files.
+```text
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=dental-documents
+FRONTEND_URL=http://localhost:8080
+```
 
-Also add:
+Frontend needs `frontend/.env`.
+
+Required frontend variables:
+
+```text
+VITE_API_URL=http://localhost:8000
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+Do not commit real `.env` files. `SUPABASE_SERVICE_ROLE_KEY` is backend-only and must never be used by the frontend.
+
+## Production notes
+
+Set `FRONTEND_URL` on backend hosting to the production frontend domain, for example:
+
+```text
+FRONTEND_URL=https://your-production-frontend-domain.com
+```
+
+The backend CORS allowlist includes local development origins plus `FRONTEND_URL`; do not use wildcard origins in production.
+
+For production Supabase Storage, keep the `dental-documents` bucket private. Medical documents are stored as object paths and opened through short-lived signed URLs from the backend.
+
+Frontend hosting needs:
+
+```text
+VITE_API_URL=https://your-production-backend-domain.com
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
 
 ## Demo mode
 
 To activate demo mode:
-Paramètres → Mode démo → Activer le mode démo
+
+```text
+Paramètres -> Mode démo -> Activer le mode démo
+```
 
 To deactivate:
-Paramètres → Mode démo → Désactiver
 
-Demo mode is only for screenshots and presentations. It does not save fake data to Supabase.
+```text
+Paramètres -> Mode démo -> Désactiver
+```
 
-Also add:
+Demo mode is frontend-only, stored in localStorage, and intended for screenshots and presentations. It does not save fake data to Supabase.
 
 ## Common issues
 
-If login/API does not work:
-- make sure backend is running
-- open http://localhost:8000/health
+If login or API calls do not work:
 
-If uvicorn is not recognized:
-use python -m uvicorn instead of uvicorn
+- make sure the backend is running
+- open `http://localhost:8000/health`
 
-If port 8000 is busy:
+If `uvicorn` is not recognized:
+
+```bash
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+If port `8000` is busy:
+
+```bat
 netstat -ano | findstr :8000
 taskkill /PID YOUR_PID /F
-
-Keep it short, clean, and beginner-friendly.
+```
