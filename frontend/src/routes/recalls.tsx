@@ -227,7 +227,6 @@ function RecallsPage() {
           status: toApiStatus(form.status),
           notes,
         };
-        console.log("Recall payload before submit", payload);
         await createRecall(payload);
         await loadRealRecalls();
       }

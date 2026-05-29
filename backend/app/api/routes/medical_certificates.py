@@ -3,11 +3,18 @@ import re
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.routes.crud import _supabase_error_detail
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import CertificateIn
-from app.services.pdf_service import PDF_GENERATION_ERROR, PdfGenerationError, generate_document_pdf
+from app.services.pdf_service import (
+    PDF_ENGINE_UNAVAILABLE_CODE,
+    PDF_ENGINE_UNAVAILABLE_MESSAGE,
+    PDF_GENERATION_ERROR,
+    PdfGenerationError,
+    generate_document_pdf,
+    safe_multiline,
+    safe_text,
+)
 from app.services.storage_service import create_signed_document_url, storage_path_from_value
 from app.utils.ownership import ensure_certificate_in_cabinet, ensure_patient_in_cabinet
 from app.utils.references import make_reference
@@ -15,6 +22,13 @@ from app.utils.references import make_reference
 router = APIRouter(prefix="/medical-certificates", tags=["medical-certificates"])
 
 ALLOWED_STATUSES = {"Brouillon", "Finalisé", "Envoyé", "Imprimé"}
+
+
+def _pdf_engine_unavailable(exc: Exception):
+    return HTTPException(
+        status_code=503,
+        detail={"code": PDF_ENGINE_UNAVAILABLE_CODE, "message": PDF_ENGINE_UNAVAILABLE_MESSAGE},
+    )
 
 
 def _validate_status(status: str | None, current_user: AuthUser):
@@ -44,7 +58,13 @@ def _generate_certificate_pdf(certificate_id: str, current_user: AuthUser):
     cert = _get_certificate(certificate_id, current_user.cabinet_id)
     patient = supabase.table("patients").select("*").eq("id", cert["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
     cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
-    body = f"<p>{cert.get('certificate_text') or cert.get('observations') or ''}</p><p>Motif: {cert.get('motif') or ''}</p><p>Période: {cert.get('start_date') or ''} - {cert.get('end_date') or ''}</p>"
+    body = (
+        f"<p>{safe_multiline(cert.get('certificate_text') or cert.get('observations'))}</p>"
+        f"<p>Motif: {safe_multiline(cert.get('motif'))}</p>"
+        f"<p>Période: {safe_text(cert.get('start_date'))} - {safe_text(cert.get('end_date'))}</p>"
+        f"<p>Type: {safe_text(cert.get('certificate_type'))}</p>"
+        f"<p>Durée: {safe_text(cert.get('rest_duration'))}</p>"
+    )
     storage_path = f"{current_user.cabinet_id}/medical-certificates/{certificate_id}.pdf"
     pdf_path = generate_document_pdf("Certificat médical", cabinet or {}, patient or {}, body, cert.get("reference") or certificate_id, storage_path)
     response = supabase.table("medical_certificates").update({"pdf_url": pdf_path}).eq("id", certificate_id).eq("cabinet_id", current_user.cabinet_id).execute()
@@ -80,7 +100,7 @@ def create_certificate(payload: CertificateIn, current_user: AuthUser):
     try:
         response = get_supabase().table("medical_certificates").insert(data).execute()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
     return response.data[0] if response.data else None
 
 
@@ -103,7 +123,7 @@ def update_certificate(certificate_id: str, payload: CertificateIn, current_user
             .execute()
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
     if not response.data:
         raise HTTPException(status_code=404, detail="Not found")
     return response.data[0]
@@ -155,7 +175,7 @@ def duplicate_certificate(certificate_id: str, current_user: AuthUser):
     try:
         response = get_supabase().table("medical_certificates").insert(cert).execute()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
     return response.data[0]
 
 
@@ -187,7 +207,7 @@ def generate_certificate_pdf(certificate_id: str, current_user: AuthUser):
     try:
         return _generate_certificate_pdf(certificate_id, current_user)
     except PdfGenerationError as exc:
-        raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
+        raise _pdf_engine_unavailable(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
 
@@ -202,6 +222,8 @@ def get_certificate_pdf_url(certificate_id: str, current_user: AuthUser):
         try:
             cert = _generate_certificate_pdf(certificate_id, current_user)
             storage_path = storage_path_from_value(cert.get("pdf_url"))
+        except PdfGenerationError as exc:
+            raise _pdf_engine_unavailable(exc) from exc
         except Exception as exc:
             raise HTTPException(status_code=409, detail="PDF non disponible. Veuillez régénérer le document.") from exc
     if not storage_path or not storage_path.lower().endswith(".pdf"):

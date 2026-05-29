@@ -142,8 +142,7 @@ function SettingsPage() {
     try {
       const members = await teamApi.list();
       setTeamMembers(members);
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de charger l'équipe du cabinet.");
     } finally {
       setIsTeamLoading(false);
@@ -170,8 +169,7 @@ function SettingsPage() {
 
       const [cabinet, settings] = await Promise.all([
         getCurrentCabinet(),
-        getSettings().catch((error) => {
-          console.error(error);
+        getSettings().catch(() => {
           toast.error("Impossible de charger les paramètres du cabinet.");
           return [];
         }),
@@ -193,8 +191,7 @@ function SettingsPage() {
 
       if (canManageTeam(user.role)) loadTeam();
       else setTeamMembers([]);
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de charger les paramètres du cabinet.");
     } finally {
       setIsSettingsLoading(false);
@@ -207,8 +204,8 @@ function SettingsPage() {
     if (demoModeEnabled) {
       try {
         loadDemoSettings();
-      } catch (error) {
-        console.error(error);
+      } catch {
+        console.warn("Demo settings load failed");
       }
       return () => {
         active = false;
@@ -260,8 +257,7 @@ function SettingsPage() {
         automations,
       });
       toast.success("Préférences enregistrées avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible d'enregistrer les paramètres.");
     } finally {
       setIsSavingSettings(false);
@@ -290,8 +286,7 @@ function SettingsPage() {
       toast.info(result.message);
       setInviteForm({ full_name: "", email: "", role: "secretary" });
       setIsInviteOpen(false);
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Invitation impossible.");
     } finally {
       setIsInviting(false);

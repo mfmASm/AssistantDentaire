@@ -35,6 +35,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { currentMonthPrefix, relativeISO, todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoFavoriteMedications, demoPatients, demoPrescriptions, isDemoMode } from "@/lib/demoMode";
+import { ApiError } from "@/lib/api";
 import { canFinalizeMedicalDocuments, normalizeRole, type AppRole } from "@/lib/roles";
 import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { authApi, type AuthMe } from "@/services/authApi";
@@ -60,6 +61,12 @@ import {
   type PrescriptionPayload,
   updatePrescription,
 } from "@/services/prescriptionsApi";
+
+const PDF_ENGINE_UNAVAILABLE_CODE = "PDF_ENGINE_UNAVAILABLE";
+
+function isPdfEngineUnavailable(error: unknown) {
+  return error instanceof ApiError && error.code === PDF_ENGINE_UNAVAILABLE_CODE;
+}
 
 export const Route = createFileRoute("/ordonnances")({
   head: () => ({
@@ -769,8 +776,8 @@ function OrdonnancesPage() {
       const patientsById = Object.fromEntries(patients.map((patient) => [patient.id, patient]));
       setForm(toOrdonnance(prescription, patientsById));
       setFormOpen(true);
-    } catch (error) {
-      console.error("Prescription fetch failed before edit", error);
+    } catch {
+      console.warn("Prescription fetch failed before edit");
       toast.error("Impossible d'ouvrir le brouillon.");
     }
   };
@@ -819,8 +826,8 @@ function OrdonnancesPage() {
         }
         await loadRealData();
         setFormOpen(false);
-      } catch (error) {
-        console.error("Prescription update failed", error);
+      } catch {
+        console.warn("Prescription update failed");
         toast.error(form.id ? "Impossible de modifier le brouillon." : "Impossible d'enregistrer l'ordonnance.");
       } finally {
         setSaving(false);
@@ -1009,7 +1016,12 @@ function OrdonnancesPage() {
         const signed = await getPrescriptionPdfUrl(ordonnance.id);
         window.open(signed.url, "_blank", "noopener,noreferrer");
         toast.success("PDF téléchargé.");
-      } catch {
+      } catch (error) {
+        if (isPdfEngineUnavailable(error)) {
+          toast.error("Génération PDF serveur indisponible. Utilisez l'impression pour enregistrer en PDF.");
+          printOrdonnance(ordonnance);
+          return;
+        }
         toast.error("Impossible de générer le PDF pour le moment.");
       }
       return;

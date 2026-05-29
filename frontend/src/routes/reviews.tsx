@@ -205,7 +205,6 @@ function ReviewsPage() {
               appointment_id: appointment?.id ?? null,
               status: "Non envoyé",
             };
-            console.log("Review request payload before submit", payload);
             return createReviewRequest(payload);
           }),
         );

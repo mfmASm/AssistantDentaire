@@ -53,7 +53,6 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
   const router = useRouter();
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -113,10 +112,6 @@ function AppShell() {
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
 
   useEffect(() => {
-    console.log("Root route rendered");
-  }, []);
-
-  useEffect(() => {
     if (demoMode || !isAuthorized || isPublicPage) {
       setRealNotifications([]);
       return;
@@ -127,8 +122,7 @@ function AppShell() {
       .then((summary) => {
         if (active) setRealNotifications(buildRealNotifications(summary));
       })
-      .catch((error) => {
-        console.error(error);
+      .catch(() => {
         if (active) setRealNotifications([]);
       });
 
@@ -144,9 +138,6 @@ function AppShell() {
       if (active && !isAuthorized) setIsCheckingAuth(true);
       try {
         const session = await authApi.session();
-        console.log("Current pathname", pathname);
-        console.log("Is login route", isAuthPage);
-        console.log("Session exists", session?.access_token ? "yes" : "no");
 
         if (isAuthPage) {
           if (active) {
@@ -180,8 +171,7 @@ function AppShell() {
           setIsAuthorized(true);
           setIsCheckingAuth(false);
         }
-      } catch (error) {
-        console.error(error);
+      } catch {
         await authApi.logout();
         if (active) {
           setCurrentUser(null);
@@ -198,10 +188,6 @@ function AppShell() {
       active = false;
     };
   }, [isAuthPage, isPublicPage, isAuthorized, pathname, router]);
-
-  useEffect(() => {
-    console.log("Auth loading state", isCheckingAuth);
-  }, [isCheckingAuth]);
 
   useEffect(() => {
     const updateDemoMode = () => setDemoModeState(isDemoMode());
@@ -443,9 +429,6 @@ function NotificationRow({ notification, isRead }: { notification: AppNotificati
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  useEffect(() => {
-    console.log("App mounted");
-  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -4,10 +4,22 @@ from html import escape
 from app.services.storage_service import upload_pdf_bytes
 
 PDF_GENERATION_ERROR = "Impossible de générer le PDF pour le moment."
+PDF_ENGINE_UNAVAILABLE_CODE = "PDF_ENGINE_UNAVAILABLE"
+PDF_ENGINE_UNAVAILABLE_MESSAGE = "PDF engine unavailable"
 
 
 class PdfGenerationError(RuntimeError):
     pass
+
+
+def safe_text(value) -> str:
+    if value is None:
+        return ""
+    return escape(str(value), quote=True)
+
+
+def safe_multiline(value) -> str:
+    return safe_text(value).replace("\n", "<br>")
 
 
 def _document_html(title: str, cabinet: dict, patient: dict, body: str, reference: str) -> str:
@@ -33,15 +45,15 @@ def _document_html(title: str, cabinet: dict, patient: dict, body: str, referenc
     </head>
     <body>
       <header>
-        <h1>{escape(cabinet.get("name") or "Cabinet dentaire")}</h1>
-        <div>{escape(cabinet.get("dentist_name") or "")}</div>
-        <div class="muted">{escape(cabinet.get("address") or "")} {escape(cabinet.get("city") or "")} · {escape(cabinet.get("phone") or "")}</div>
+        <h1>{safe_text(cabinet.get("name") or "Cabinet dentaire")}</h1>
+        <div>{safe_text(cabinet.get("dentist_name") or "")}</div>
+        <div class="muted">{safe_text(cabinet.get("address") or "")} {safe_text(cabinet.get("city") or "")} · {safe_text(cabinet.get("phone") or "")}</div>
       </header>
       <div class="grid">
-        <div class="card"><strong>Patient</strong><br />{escape(patient.get("full_name") or "")}<br />{escape(patient.get("phone") or "")}</div>
-        <div class="card"><strong>Référence</strong><br />{escape(reference)}<br />Date: {date.today():%d/%m/%Y}</div>
+        <div class="card"><strong>Patient</strong><br />{safe_text(patient.get("full_name") or "")}<br />{safe_text(patient.get("phone") or "")}</div>
+        <div class="card"><strong>Référence</strong><br />{safe_text(reference)}<br />Date: {date.today():%d/%m/%Y}</div>
       </div>
-      <h2>{escape(title)}</h2>
+      <h2>{safe_text(title)}</h2>
       <main class="content">{body}</main>
       <section class="signature">
         <div class="box">Signature du praticien</div>

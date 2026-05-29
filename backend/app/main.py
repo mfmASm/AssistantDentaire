@@ -41,12 +41,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.on_event("startup")
-def log_cors_origins():
-    print("Allowed CORS origins:", allowed_origins)
-
-
 @app.get("/health")
 def health():
     return {"status": "ok"}

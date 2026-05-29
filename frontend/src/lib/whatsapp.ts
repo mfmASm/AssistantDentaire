@@ -84,7 +84,7 @@ export const logAndOpenWhatsapp = ({ patientId, type, phone, message }: LogAndOp
       message: message ?? "",
       phone: phone ?? "",
       status: "Ouvert WhatsApp",
-    }).catch((error) => console.warn("WhatsApp log failed", error));
+    }).catch(() => console.warn("WhatsApp log failed"));
   }
 
   return true;

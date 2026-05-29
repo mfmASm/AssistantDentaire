@@ -220,8 +220,7 @@ function AppointmentsPage() {
         };
       });
       setRows(appointmentRows);
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de charger les rendez-vous.");
     } finally {
       setIsLoading(false);
@@ -323,8 +322,7 @@ function AppointmentsPage() {
       });
       setIsAddOpen(false);
       toast.success("RDV ajouté avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible d'ajouter le rendez-vous.");
     } finally {
       setIsSaving(false);
@@ -379,8 +377,7 @@ function AppointmentsPage() {
         ),
       );
       toast.success("Suivi mis à jour avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de mettre à jour le suivi.");
     }
   };
@@ -421,8 +418,7 @@ function AppointmentsPage() {
       await appointmentsApi.deleteAppointment(appointment.id);
       setRows((current) => current.filter((row) => row.id !== appointment.id));
       toast.success("RDV supprimé avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de supprimer le rendez-vous.");
     } finally {
       setDeletingId(null);

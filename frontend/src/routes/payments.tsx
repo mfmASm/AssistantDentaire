@@ -165,8 +165,7 @@ function PaymentsPage() {
         };
       });
       setRows(paymentRows);
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de charger les paiements.");
     } finally {
       setIsLoading(false);
@@ -225,8 +224,6 @@ function PaymentsPage() {
       due_date: form.dueDate,
       notes: form.notes.trim() || undefined,
     };
-    console.log("Payment payload before submit", payload);
-
     setIsSaving(true);
     try {
       if (demoMode) {
@@ -274,8 +271,8 @@ function PaymentsPage() {
       });
       setIsAddOpen(false);
       toast.success("Paiement enregistré avec succès.");
-    } catch (error) {
-      console.error("Payment creation failed", { error, payload });
+    } catch {
+      console.warn("Payment creation failed");
       toast.error("Impossible d'enregistrer le paiement. Vérifiez les montants et réessayez.");
     } finally {
       setIsSaving(false);

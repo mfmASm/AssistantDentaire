@@ -67,14 +67,6 @@ def _normalize_payment_status(status: str | None) -> str:
     return PAYMENT_STATUS_MAP.get(normalized, status or "Impayé")
 
 
-def _supabase_error_message(error: Exception) -> str:
-    for attr in ("message", "details", "hint", "code"):
-        value = getattr(error, attr, None)
-        if value:
-            return str(value)
-    return str(error) or error.__class__.__name__
-
-
 def _patient_in_current_cabinet(patient_id: UUID | str, cabinet_id: str) -> bool:
     try:
         response = (
@@ -87,8 +79,7 @@ def _patient_in_current_cabinet(patient_id: UUID | str, cabinet_id: str) -> bool
             .execute()
         )
     except Exception as exc:
-        print("Patient lookup failed before payment create:", _supabase_error_message(exc))
-        raise HTTPException(status_code=500, detail=_supabase_error_message(exc)) from exc
+        raise HTTPException(status_code=500, detail="Impossible d'enregistrer les données.") from exc
     return bool(response.data)
 
 
@@ -143,8 +134,6 @@ def create_payment(payload: PaymentIn, current_user: AuthUser):
         data = _serialize_payload(_with_remaining_amount(data))
         data["cabinet_id"] = current_user.cabinet_id
 
-        print("Creating payment payload:", data)
-
         response = get_supabase().table("payments").insert(data).execute()
         payment = response.data[0] if response.data else None
         if not payment:
@@ -153,9 +142,7 @@ def create_payment(payload: PaymentIn, current_user: AuthUser):
     except HTTPException:
         raise
     except Exception as exc:
-        message = _supabase_error_message(exc)
-        print("Payment create failed:", message)
-        raise HTTPException(status_code=500, detail=message) from exc
+        raise HTTPException(status_code=500, detail="Impossible d'enregistrer les données.") from exc
 
 
 @router.put("/{payment_id}")

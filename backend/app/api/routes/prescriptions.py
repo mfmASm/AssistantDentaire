@@ -2,11 +2,18 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.routes.crud import _supabase_error_detail
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import PrescriptionIn, PrescriptionItemIn
-from app.services.pdf_service import PDF_GENERATION_ERROR, PdfGenerationError, generate_document_pdf
+from app.services.pdf_service import (
+    PDF_ENGINE_UNAVAILABLE_CODE,
+    PDF_ENGINE_UNAVAILABLE_MESSAGE,
+    PDF_GENERATION_ERROR,
+    PdfGenerationError,
+    generate_document_pdf,
+    safe_multiline,
+    safe_text,
+)
 from app.services.storage_service import create_signed_document_url, storage_path_from_value
 from app.utils.ownership import ensure_patient_in_cabinet, ensure_prescription_in_cabinet
 from app.utils.references import make_reference
@@ -14,6 +21,13 @@ from app.utils.references import make_reference
 router = APIRouter(prefix="/prescriptions", tags=["prescriptions"])
 
 ALLOWED_STATUSES = {"Brouillon", "Finalisée", "Envoyée", "Imprimée"}
+
+
+def _pdf_engine_unavailable(exc: Exception):
+    return HTTPException(
+        status_code=503,
+        detail={"code": PDF_ENGINE_UNAVAILABLE_CODE, "message": PDF_ENGINE_UNAVAILABLE_MESSAGE},
+    )
 
 
 def _validate_status(status: str | None, current_user: AuthUser):
@@ -35,9 +49,20 @@ def _generate_prescription_pdf(prescription_id: str, current_user: AuthUser):
     patient = supabase.table("patients").select("*").eq("id", prescription["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
     cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
     items = supabase.table("prescription_items").select("*").eq("prescription_id", prescription_id).execute().data or []
-    body = "<ul>" + "".join(f"<li><strong>{i.get('medication_name','')}</strong> {i.get('dosage') or ''} {i.get('frequency') or ''} {i.get('duration') or ''}<br />{i.get('instructions') or ''}</li>" for i in items) + "</ul>"
+    body = "<ul>" + "".join(
+        (
+            f"<li><strong>{safe_text(i.get('medication_name'))}</strong> "
+            f"{safe_text(i.get('dosage'))} {safe_text(i.get('frequency'))} {safe_text(i.get('duration'))}"
+            f"<br />{safe_multiline(i.get('instructions'))}</li>"
+        )
+        for i in items
+    ) + "</ul>"
     if prescription.get("instructions"):
-        body += f"<p>{prescription['instructions']}</p>"
+        body += f"<p>{safe_multiline(prescription.get('instructions'))}</p>"
+    if prescription.get("motif"):
+        body += f"<p><strong>Motif:</strong> {safe_multiline(prescription.get('motif'))}</p>"
+    if prescription.get("diagnosis_notes"):
+        body += f"<p><strong>Notes:</strong> {safe_multiline(prescription.get('diagnosis_notes'))}</p>"
     storage_path = f"{current_user.cabinet_id}/prescriptions/{prescription_id}.pdf"
     pdf_path = generate_document_pdf("Ordonnance", cabinet or {}, patient or {}, body, prescription.get("reference") or prescription_id, storage_path)
     response = supabase.table("prescriptions").update({"pdf_url": pdf_path}).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
@@ -70,7 +95,7 @@ def create_prescription(payload: PrescriptionIn, current_user: AuthUser):
             items = [item.model_dump(mode="json") | {"prescription_id": prescription["id"]} for item in payload.items]
             get_supabase().table("prescription_items").insert(items).execute()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
     return get_prescription(prescription["id"], current_user)
 
 
@@ -89,7 +114,7 @@ def update_prescription(prescription_id: str, payload: PrescriptionIn, current_u
                 items = [item.model_dump(mode="json") | {"prescription_id": prescription_id} for item in payload.items]
                 get_supabase().table("prescription_items").insert(items).execute()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
     if not response.data:
         raise HTTPException(status_code=404, detail="Not found")
     return get_prescription(prescription_id, current_user)
@@ -132,7 +157,7 @@ def duplicate_prescription(prescription_id: str, current_user: AuthUser):
             ]
             get_supabase().table("prescription_items").insert(copied).execute()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
     return get_prescription(created["id"], current_user)
 
 
@@ -157,7 +182,7 @@ def generate_pdf(prescription_id: str, current_user: AuthUser):
     try:
         return _generate_prescription_pdf(prescription_id, current_user)
     except PdfGenerationError as exc:
-        raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
+        raise _pdf_engine_unavailable(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
 
@@ -172,6 +197,8 @@ def get_prescription_pdf_url(prescription_id: str, current_user: AuthUser):
         try:
             prescription = _generate_prescription_pdf(prescription_id, current_user)
             storage_path = storage_path_from_value(prescription.get("pdf_url"))
+        except PdfGenerationError as exc:
+            raise _pdf_engine_unavailable(exc) from exc
         except Exception as exc:
             raise HTTPException(status_code=409, detail="PDF non disponible. Veuillez régénérer le document.") from exc
     if not storage_path or not storage_path.lower().endswith(".pdf"):
@@ -194,7 +221,7 @@ def create_item(prescription_id: str, payload: PrescriptionItemIn, current_user:
     try:
         return get_supabase().table("prescription_items").insert(payload.model_dump(mode="json") | {"prescription_id": prescription_id}).execute().data[0]
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=_supabase_error_detail(exc)) from exc
+        raise HTTPException(status_code=400, detail="Impossible d'enregistrer les données.") from exc
 
 
 @router.put("/{prescription_id}/items/{item_id}")

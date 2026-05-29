@@ -39,19 +39,15 @@ function LoginPage() {
 
     authApi.session()
       .then(async (session) => {
-        console.log("Login route session exists", session?.access_token ? "yes" : "no");
         if (!session?.access_token) return;
         try {
           await authApi.ensureOnboarded();
           if (active) navigate({ to: "/" });
-        } catch (error) {
-          console.error(error);
+        } catch {
           await authApi.logout();
         }
       })
-      .catch((error) => {
-        console.error(error);
-      });
+      .catch(() => undefined);
 
     return () => {
       active = false;
@@ -69,7 +65,6 @@ function LoginPage() {
       toast.success("Connexion reussie");
       navigate({ to: "/" });
     } catch (error) {
-      console.error(error);
       toast.error(getFriendlyAuthError(error, "login"));
     } finally {
       setIsSubmitting(false);
@@ -90,7 +85,6 @@ function LoginPage() {
         toast.success("Compte cree. Verifiez votre email avant de vous connecter.");
       }
     } catch (error) {
-      console.error(error);
       const message = getFriendlyAuthError(error, "signup");
       toast.error(message);
       if (isExistingUserError(error)) {

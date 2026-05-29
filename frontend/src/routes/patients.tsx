@@ -75,8 +75,7 @@ function PatientsPage() {
       }
       const patients = await patientsApi.list();
       setRows(patients.map(toUiPatient));
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de charger les patients.");
     } finally {
       setIsLoading(false);
@@ -129,8 +128,7 @@ function PatientsPage() {
       setNewPatient({ name: "", phone: "", email: "", age: "", gender: "", address: "", status: "active", source: "Walk-in", notes: "" });
       setIsAddOpen(false);
       toast.success("Patient ajouté avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible d'ajouter le patient.");
     } finally {
       setIsSaving(false);
@@ -198,8 +196,7 @@ function PatientsPage() {
       setSelectedPatient(uiPatient);
       setIsEditOpen(false);
       toast.success("Patient mis à jour avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de mettre à jour le patient.");
     } finally {
       setIsSaving(false);
@@ -230,8 +227,7 @@ function PatientsPage() {
         setIsEditOpen(false);
       }
       toast.success("Patient supprimé avec succès.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast.error("Impossible de supprimer le patient.");
     } finally {
       setIsDeleting(false);

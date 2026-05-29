@@ -24,15 +24,7 @@ def _tenant_payload(payload: BaseModel | dict[str, Any], cabinet_id: str) -> dic
 
 
 def _supabase_error_detail(exc: Exception) -> Any:
-    detail = getattr(exc, "details", None)
-    if detail:
-        return detail
-    message = getattr(exc, "message", None)
-    if message:
-        return message
-    if exc.args:
-        return exc.args[0]
-    return str(exc)
+    return "Impossible d'enregistrer les données."
 
 
 def _validate_references(table: str, data: dict[str, Any], cabinet_id: str) -> None:

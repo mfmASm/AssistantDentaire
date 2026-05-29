@@ -32,6 +32,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { addDays, currentMonthPrefix, formatShortDate, relativeISO, todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoCertificates, demoPatients, isDemoMode } from "@/lib/demoMode";
+import { ApiError } from "@/lib/api";
 import { canFinalizeMedicalDocuments, normalizeRole, type AppRole } from "@/lib/roles";
 import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { authApi, type AuthMe } from "@/services/authApi";
@@ -48,6 +49,12 @@ import {
   updateMedicalCertificate,
 } from "@/services/medicalCertificatesApi";
 import { patientsApi, type ApiPatient } from "@/services/patientsApi";
+
+const PDF_ENGINE_UNAVAILABLE_CODE = "PDF_ENGINE_UNAVAILABLE";
+
+function isPdfEngineUnavailable(error: unknown) {
+  return error instanceof ApiError && error.code === PDF_ENGINE_UNAVAILABLE_CODE;
+}
 
 export const Route = createFileRoute("/certificats-medicaux")({
   head: () => ({
@@ -532,8 +539,8 @@ function MedicalCertificatesPage() {
       const patientsById = Object.fromEntries(patients.map((patient) => [patient.id, patient]));
       setForm(toMedicalCertificate(response, patientsById));
       setFormOpen(true);
-    } catch (error) {
-      console.error("Medical certificate fetch failed before edit", error);
+    } catch {
+      console.warn("Medical certificate fetch failed before edit");
       toast.error("Impossible d'ouvrir le brouillon.");
     }
   };
@@ -548,8 +555,8 @@ function MedicalCertificatesPage() {
       const response = await getMedicalCertificate(certificate.id);
       const patientsById = Object.fromEntries(patients.map((patient) => [patient.id, patient]));
       setPreview(toMedicalCertificate(response, patientsById));
-    } catch (error) {
-      console.error("Medical certificate fetch failed before preview", error);
+    } catch {
+      console.warn("Medical certificate fetch failed before preview");
       setPreview(certificate);
       toast.error("Impossible de charger le détail du certificat.");
     }
@@ -586,8 +593,8 @@ function MedicalCertificatesPage() {
         }
         await loadRealData();
         setFormOpen(false);
-      } catch (error) {
-        console.error("Medical certificate save failed", error);
+      } catch {
+        console.warn("Medical certificate save failed");
         toast.error(form.id ? "Impossible de modifier le brouillon." : "Impossible d'enregistrer le certificat.");
       } finally {
         setSaving(false);
@@ -679,7 +686,12 @@ function MedicalCertificatesPage() {
         const signed = await getMedicalCertificatePdfUrl(certificate.id);
         window.open(signed.url, "_blank", "noopener,noreferrer");
         toast.success("PDF téléchargé.");
-      } catch {
+      } catch (error) {
+        if (isPdfEngineUnavailable(error)) {
+          toast.error("Génération PDF serveur indisponible. Utilisez l'impression pour enregistrer en PDF.");
+          printCertificate(certificate);
+          return;
+        }
         toast.error("Impossible de générer le PDF pour le moment.");
       }
       return;
