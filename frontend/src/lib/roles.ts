@@ -1,27 +1,35 @@
 export type AppRole = "admin" | "doctor" | "secretary" | string | undefined | null;
 
+export function normalizeRole(role: AppRole) {
+  return typeof role === "string" ? role.trim().toLowerCase() : role;
+}
+
 export function getRoleLabel(role: AppRole) {
-  if (role === "doctor") return "Docteur";
-  if (role === "secretary") return "Secrétaire médicale";
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === "doctor") return "Docteur";
+  if (normalizedRole === "secretary") return "Secrétaire médicale";
   return "Docteur propriétaire";
 }
 
 export function canManageTeam(role: AppRole) {
-  return role === "admin";
+  return normalizeRole(role) === "admin";
 }
 
 export function canManageCabinetSettings(role: AppRole) {
-  return role === "admin";
+  return normalizeRole(role) === "admin";
 }
 
 export function canFinalizeMedicalDocuments(role: AppRole) {
-  return role === "admin" || role === "doctor";
+  const normalizedRole = normalizeRole(role);
+  return normalizedRole === "admin" || normalizedRole === "doctor";
 }
 
 export function canAccessMedicalDocuments(role: AppRole) {
-  return role === "admin" || role === "doctor";
+  const normalizedRole = normalizeRole(role);
+  return normalizedRole === "admin" || normalizedRole === "doctor";
 }
 
 export function canManageOperations(role: AppRole) {
-  return role === "admin" || role === "doctor" || role === "secretary";
+  const normalizedRole = normalizeRole(role);
+  return normalizedRole === "admin" || normalizedRole === "doctor" || normalizedRole === "secretary";
 }

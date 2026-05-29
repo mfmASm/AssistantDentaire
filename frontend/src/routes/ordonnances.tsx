@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ClipboardList,
   Copy,
@@ -34,7 +34,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { currentMonthPrefix, relativeISO, todayISO } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoFavoriteMedications, demoPatients, demoPrescriptions, isDemoMode } from "@/lib/demoMode";
+import { canFinalizeMedicalDocuments, normalizeRole, type AppRole } from "@/lib/roles";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { authApi, type AuthMe } from "@/services/authApi";
+import {
+  createFavoriteMedication,
+  deleteFavoriteMedication,
+  getFavoriteMedications,
+  type ApiFavoriteMedication,
+  type FavoriteMedicationPayload,
+  updateFavoriteMedication,
+} from "@/services/favoriteMedicationsApi";
+import { patientsApi, type ApiPatient } from "@/services/patientsApi";
+import {
+  createPrescription,
+  duplicatePrescription,
+  generatePrescriptionPdf,
+  getPrescription,
+  getPrescriptions,
+  markPrescriptionSent,
+  type ApiPrescription,
+  type PrescriptionItemPayload,
+  type PrescriptionPayload,
+  updatePrescription,
+} from "@/services/prescriptionsApi";
+import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/ordonnances")({
   head: () => ({
@@ -67,6 +92,7 @@ type MedicationLine = {
 
 type Ordonnance = {
   id: string;
+  patientId?: string;
   reference: string;
   date: string;
   patient: string;
@@ -77,6 +103,7 @@ type Ordonnance = {
   diagnostic: string;
   medicaments: MedicationLine[];
   statut: PrescriptionStatus;
+  pdfUrl?: string | null;
 };
 
 type FavoriteMedication = {
@@ -494,9 +521,116 @@ const formatDate = (date: string) =>
 const medicationSummary = (medications: MedicationLine[]) =>
   medications.map((medication) => medication.medicament || "Médicament à compléter").join(", ");
 
+const normalizeStatus = (status?: string): PrescriptionStatus => {
+  if (status === "Finalisée" || status === "Finalisee" || status === "Validé" || status === "Valide") return "Finalisée";
+  if (status === "Envoyée" || status === "Envoyee") return "Envoyée";
+  if (status === "Imprimée" || status === "Imprimee") return "Imprimée";
+  return "Brouillon";
+};
+
+const toMedicationLine = (item: { id?: string; medication_name?: string | null; dosage?: string | null; frequency?: string | null; duration?: string | null; instructions?: string | null }): MedicationLine => ({
+  id: item.id || `med-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  medicament: item.medication_name || "",
+  dosage: item.dosage || "",
+  frequence: item.frequency || "",
+  duree: item.duration || "",
+  instructions: item.instructions || "",
+});
+
+const toPrescriptionItemPayload = (line: MedicationLine): PrescriptionItemPayload => ({
+  medication_name: line.medicament.trim() || "Médicament à compléter",
+  dosage: line.dosage.trim() || null,
+  frequency: line.frequence.trim() || null,
+  duration: line.duree.trim() || null,
+  instructions: line.instructions.trim() || null,
+});
+
+const toFavorite = (favorite: ApiFavoriteMedication): FavoriteMedication => ({
+  id: favorite.id,
+  nom: favorite.name,
+  categorie: (favorite.category as MedicationCategory) || "Autre",
+  dosage: favorite.default_dosage || "",
+  frequence: favorite.default_frequency || "",
+  duree: favorite.default_duration || "",
+  instructions: favorite.default_instructions || "",
+  notes: favorite.internal_notes || "",
+});
+
+const toFavoritePayload = (favorite: FavoriteMedication): FavoriteMedicationPayload => ({
+  name: favorite.nom.trim(),
+  category: favorite.categorie,
+  default_dosage: favorite.dosage.trim() || null,
+  default_frequency: favorite.frequence.trim() || null,
+  default_duration: favorite.duree.trim() || null,
+  default_instructions: favorite.instructions.trim() || null,
+  internal_notes: favorite.notes.trim() || null,
+});
+
+const toDemoOrdonnances = (): Ordonnance[] =>
+  demoPrescriptions.map((prescription, index) => {
+    const patient = demoPatients.find((p) => p.full_name === prescription.patient);
+    return {
+      id: prescription.id,
+      patientId: patient?.id,
+      reference: `ORD-DEMO-${String(index + 1).padStart(3, "0")}`,
+      date: relativeISO(-index),
+      patient: prescription.patient,
+      age: patient?.age ? String(patient.age) : "",
+      telephone: patient?.phone || "",
+      medecin: "Dr. Safaa M'gaassy",
+      motif: "Ordonnance démo",
+      diagnostic: "Modèle de démonstration. À modifier et valider par le médecin.",
+      medicaments: prescription.items.map((item, itemIndex) => ({
+        id: `${prescription.id}-${itemIndex}`,
+        medicament: item,
+        dosage: "",
+        frequence: "",
+        duree: "",
+        instructions: "",
+      })),
+      statut: "Brouillon" as PrescriptionStatus,
+    };
+  });
+
+const toDemoFavorites = (): FavoriteMedication[] =>
+  demoFavoriteMedications.map((name, index) => ({
+    id: `demo-fav-${index}`,
+    nom: name,
+    categorie: "Autre",
+    dosage: "",
+    frequence: "",
+    duree: "",
+    instructions: "",
+    notes: "Favori démo",
+  }));
+
+const toOrdonnance = (prescription: ApiPrescription, patientsById: Record<string, ApiPatient>): Ordonnance => {
+  const patient = patientsById[prescription.patient_id];
+  return {
+    id: prescription.id,
+    patientId: prescription.patient_id,
+    reference: prescription.reference || prescription.id,
+    date: prescription.prescription_date || prescription.created_at?.slice(0, 10) || todayISO(),
+    patient: patient?.full_name || "Patient inconnu",
+    age: patient?.age ? String(patient.age) : "",
+    telephone: patient?.phone || "",
+    medecin: doctors[0],
+    motif: prescription.motif || "",
+    diagnostic: prescription.diagnosis_notes || prescription.instructions || "",
+    medicaments: prescription.items?.length ? prescription.items.map(toMedicationLine) : [emptyMedication()],
+    statut: normalizeStatus(prescription.status),
+    pdfUrl: prescription.pdf_url,
+  };
+};
+
 function OrdonnancesPage() {
-  const [rows, setRows] = useState<Ordonnance[]>(initialRows);
-  const [favorites, setFavorites] = useState<FavoriteMedication[]>(initialFavorites);
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
+  const [rows, setRows] = useState<Ordonnance[]>(() => (isDemoMode() ? toDemoOrdonnances() : []));
+  const [favorites, setFavorites] = useState<FavoriteMedication[]>(() => (isDemoMode() ? toDemoFavorites() : []));
+  const [patients, setPatients] = useState<ApiPatient[]>(() => (isDemoMode() ? demoPatients : []));
+  const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -510,6 +644,64 @@ function OrdonnancesPage() {
   const [favoriteDraft, setFavoriteDraft] = useState<FavoriteMedication>(blankFavorite);
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [selectedMedicationLine, setSelectedMedicationLine] = useState<string | null>(null);
+  const loadRealData = async () => {
+    const [prescriptionsResponse, patientsResponse, favoritesResponse] = await Promise.all([
+      getPrescriptions(),
+      patientsApi.list(),
+      getFavoriteMedications(),
+    ]);
+    const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
+    const detailedPrescriptions = await Promise.all(
+      prescriptionsResponse.map((prescription) => getPrescription(prescription.id).catch(() => prescription)),
+    );
+    setPatients(patientsResponse);
+    setRows(detailedPrescriptions.map((prescription) => toOrdonnance(prescription, patientsById)));
+    setFavorites(favoritesResponse.map(toFavorite));
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    if (demoMode) {
+      setLoading(false);
+      setPatients(demoPatients);
+      setRows(toDemoOrdonnances());
+      setFavorites(toDemoFavorites());
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoading(true);
+    Promise.all([authApi.me().catch(() => null), loadRealData()])
+      .then(([user]) => {
+        if (!active) return;
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRows([]);
+        setFavorites([]);
+        toast.error("Impossible de charger les ordonnances.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
+  }, []);
 
   const filtered = useMemo(
     () =>
@@ -531,7 +723,27 @@ function OrdonnancesPage() {
     return !favoriteQuery || haystack.includes(favoriteQuery.toLowerCase());
   });
 
+  const selectedPatient = form.patientId ? patients.find((patient) => patient.id === form.patientId) : undefined;
+
+  const makePrescriptionPayload = (statut: PrescriptionStatus): PrescriptionPayload | null => {
+    const patientId = form.patientId || patients.find((patient) => patient.full_name === form.patient)?.id;
+    if (!patientId) return null;
+    return {
+      patient_id: patientId,
+      prescription_date: form.date,
+      motif: form.motif.trim() || null,
+      diagnosis_notes: form.diagnostic.trim() || null,
+      instructions: form.diagnostic.trim() || null,
+      status: statut,
+      items: form.medicaments.map(toPrescriptionItemPayload),
+    };
+  };
+
   const openNew = (seed?: Partial<Ordonnance>) => {
+    if (!demoMode && patients.length === 0) {
+      toast.error("Ajoutez d’abord un patient avant de créer une ordonnance.");
+      return;
+    }
     setForm({
       ...blankOrdonnance(),
       ...seed,
@@ -543,17 +755,100 @@ function OrdonnancesPage() {
     setFormOpen(true);
   };
 
-  const saveOrdonnance = (statut: PrescriptionStatus) => {
+  const editDraftOrdonnance = async (ordonnance: Ordonnance) => {
+    if (ordonnance.statut !== "Brouillon") return;
+
+    if (demoMode) {
+      setForm(ordonnance);
+      setFormOpen(true);
+      return;
+    }
+
+    try {
+      const prescription = await getPrescription(ordonnance.id);
+      const patientsById = Object.fromEntries(patients.map((patient) => [patient.id, patient]));
+      setForm(toOrdonnance(prescription, patientsById));
+      setFormOpen(true);
+    } catch (error) {
+      console.error("Prescription fetch failed before edit", error);
+      toast.error("Impossible d'ouvrir le brouillon.");
+    }
+  };
+
+  const getCurrentUserRole = async () => {
+    const role = normalizeRole(currentUser?.role as AppRole);
+    if (role) return role;
+
+    try {
+      const user = await authApi.me();
+      setCurrentUser(user);
+      return normalizeRole(user.role as AppRole);
+    } catch {
+      return undefined;
+    }
+  };
+
+  const saveOrdonnance = async (statut: PrescriptionStatus) => {
+    if (!demoMode && statut === "Finalisée") {
+      const role = await getCurrentUserRole();
+      if (!role) {
+        console.warn("Missing user role for medical document finalization");
+        toast.error("Seul le docteur peut finaliser les documents médicaux.");
+        return;
+      }
+      if (!canFinalizeMedicalDocuments(role)) {
+        toast.error("Seul le docteur peut finaliser les documents médicaux.");
+        return;
+      }
+    }
+
+    if (!demoMode) {
+      const payload = makePrescriptionPayload(statut);
+      if (!payload) {
+        toast.error("Veuillez sélectionner un patient existant.");
+        return;
+      }
+      setSaving(true);
+      try {
+        if (form.id) {
+          await updatePrescription(form.id, payload);
+          toast.success(statut === "Brouillon" ? "Brouillon mis à jour avec succès." : "Ordonnance finalisée avec succès.");
+        } else {
+          await createPrescription(payload);
+          toast.success("Ordonnance enregistrée avec succès.");
+        }
+        await loadRealData();
+        setFormOpen(false);
+      } catch (error) {
+        console.error("Prescription update failed", error);
+        toast.error(form.id ? "Impossible de modifier le brouillon." : "Impossible d'enregistrer l'ordonnance.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const id = form.id || `ord-${Date.now()}`;
     const reference = form.reference || `ORD-${new Date().getFullYear()}-${String(rows.length + 1).padStart(3, "0")}`;
     const ordonnance = { ...form, id, reference, statut };
     setRows((current) => (form.id ? current.map((row) => (row.id === form.id ? ordonnance : row)) : [ordonnance, ...current]));
     setForm(ordonnance);
     setFormOpen(false);
-    toast.success(statut === "Brouillon" ? "Ordonnance enregistrée en brouillon." : "Ordonnance finalisée.");
+    toast.success(form.id ? (statut === "Brouillon" ? "Brouillon mis à jour avec succès." : "Ordonnance finalisée avec succès.") : (statut === "Brouillon" ? "Ordonnance enregistrée en brouillon." : "Ordonnance finalisée."));
   };
 
-  const duplicateOrdonnance = (ordonnance: Ordonnance) => {
+  const duplicateOrdonnance = async (ordonnance: Ordonnance) => {
+    if (!demoMode) {
+      try {
+        await duplicatePrescription(ordonnance.id);
+        await loadRealData();
+        toast.success("Ordonnance dupliquée avec succès.");
+      } catch {
+        toast.error("Impossible de dupliquer l'ordonnance.");
+      }
+      return;
+    }
+
     const copy = {
       ...ordonnance,
       id: `ord-${Date.now()}`,
@@ -566,13 +861,31 @@ function OrdonnancesPage() {
     toast.success("Ordonnance dupliquée.");
   };
 
-  const sendWhatsApp = (ordonnance: Ordonnance) => {
+  const sendWhatsApp = async (ordonnance: Ordonnance) => {
     const id = ordonnance.id || `ord-${Date.now()}`;
     const reference = ordonnance.reference || `ORD-${new Date().getFullYear()}-${String(rows.length + 1).padStart(3, "0")}`;
     toast.info("WhatsApp Web va s’ouvrir avec le message pré-rempli. Pour envoyer un document, téléchargez le PDF puis joignez-le manuellement dans WhatsApp.");
     toast.info("Veuillez joindre le PDF téléchargé dans WhatsApp avant l’envoi.");
     const message = fillWhatsAppTemplate(whatsappTemplates.prescription, { Patient: ordonnance.patient });
     if (!openWhatsAppMessage(ordonnance.telephone, message)) return;
+    if (!demoMode && ordonnance.id) {
+      try {
+        await markPrescriptionSent(ordonnance.id);
+        await loadRealData();
+      } catch {
+        toast.error("Impossible de mettre à jour le statut de l'ordonnance.");
+      }
+      whatsappApi
+        .create({
+          patient_id: ordonnance.patientId,
+          type: "Ordonnance",
+          message,
+          phone: ordonnance.telephone,
+          status: "Préparé",
+        })
+        .catch(() => undefined);
+      return;
+    }
     const sentOrdonnance = { ...ordonnance, id, reference, statut: "Envoyée" as PrescriptionStatus };
     setRows((current) =>
       current.some((row) => row.id === id)
@@ -614,8 +927,26 @@ function OrdonnancesPage() {
     toast.success("Médicament favori inséré.");
   };
 
-  const saveFavorite = () => {
+  const saveFavorite = async () => {
     if (!favoriteDraft.nom.trim()) return;
+    if (!demoMode) {
+      try {
+        if (editingFavoriteId) {
+          await updateFavoriteMedication(editingFavoriteId, toFavoritePayload(favoriteDraft));
+          toast.success("Médicament favori modifié.");
+        } else {
+          await createFavoriteMedication(toFavoritePayload(favoriteDraft));
+          toast.success("Médicament favori ajouté.");
+        }
+        const refreshed = await getFavoriteMedications();
+        setFavorites(refreshed.map(toFavorite));
+        setFavoriteDraft(blankFavorite);
+        setEditingFavoriteId(null);
+      } catch {
+        toast.error("Impossible d'enregistrer le médicament favori.");
+      }
+      return;
+    }
     if (editingFavoriteId) {
       setFavorites((current) => current.map((favorite) => (favorite.id === editingFavoriteId ? { ...favoriteDraft, id: editingFavoriteId } : favorite)));
       toast.success("Médicament favori modifié.");
@@ -632,7 +963,21 @@ function OrdonnancesPage() {
     setEditingFavoriteId(favorite.id);
   };
 
-  const deleteFavorite = (id: string) => {
+  const deleteFavorite = async (id: string) => {
+    if (!demoMode) {
+      try {
+        await deleteFavoriteMedication(id);
+        setFavorites((current) => current.filter((favorite) => favorite.id !== id));
+        toast.success("Médicament favori supprimé.");
+      } catch {
+        toast.error("Impossible de supprimer le médicament favori.");
+      }
+      if (editingFavoriteId === id) {
+        setFavoriteDraft(blankFavorite);
+        setEditingFavoriteId(null);
+      }
+      return;
+    }
     setFavorites((current) => current.filter((favorite) => favorite.id !== id));
     if (editingFavoriteId === id) {
       setFavoriteDraft(blankFavorite);
@@ -660,10 +1005,20 @@ function OrdonnancesPage() {
     popup.document.close();
     popup.focus();
     popup.print();
+    if (!demoMode && ordonnance.patientId) {
+      updatePrescription(ordonnance.id, { patient_id: ordonnance.patientId, status: "Imprimée" }).catch(() => undefined);
+    }
     setRows((current) => current.map((row) => (row.id === ordonnance.id ? { ...row, statut: "Imprimée" } : row)));
   };
 
   const downloadOrdonnance = (ordonnance: Ordonnance) => {
+    if (!demoMode && ordonnance.id) {
+      generatePrescriptionPdf(ordonnance.id)
+        .then((updated) => {
+          if (updated.pdf_url) window.open(updated.pdf_url, "_blank", "noopener,noreferrer");
+        })
+        .catch(() => toast.error("Impossible de générer le PDF pour le moment."));
+    }
     const blob = createPdfBlob(ordonnance);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -757,7 +1112,17 @@ function OrdonnancesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((ordonnance) => (
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">Chargement des ordonnances...</TableCell>
+                  </TableRow>
+                )}
+                {!loading && filtered.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">Aucune ordonnance à afficher.</TableCell>
+                  </TableRow>
+                )}
+                {!loading && filtered.map((ordonnance) => (
                   <TableRow key={ordonnance.id}>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDate(ordonnance.date)}</TableCell>
                     <TableCell className="font-medium">{ordonnance.patient}</TableCell>
@@ -768,6 +1133,9 @@ function OrdonnancesPage() {
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setPreview(ordonnance)}>Voir</Button>
+                        {ordonnance.statut === "Brouillon" && (
+                          <Button variant="ghost" size="sm" onClick={() => editDraftOrdonnance(ordonnance)}><Pencil className="size-4" /> Modifier</Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => duplicateOrdonnance(ordonnance)}><Copy className="size-4" /> Dupliquer</Button>
                         <Button variant="ghost" size="sm" onClick={() => printOrdonnance(ordonnance)}><Printer className="size-4" /> Imprimer</Button>
                         <Button variant="ghost" size="sm" onClick={() => sendWhatsApp(ordonnance)}><MessageCircle className="size-4" /> Envoyer WhatsApp</Button>
@@ -786,6 +1154,9 @@ function OrdonnancesPage() {
         onOpenChange={setFormOpen}
         form={form}
         setForm={setForm}
+        patients={patients}
+        demoMode={demoMode}
+        saving={saving}
         addMedicationLine={addMedicationLine}
         updateMedicationLine={updateMedicationLine}
         removeMedicationLine={removeMedicationLine}
@@ -833,6 +1204,9 @@ function OrdonnanceFormDialog({
   onOpenChange,
   form,
   setForm,
+  patients,
+  demoMode,
+  saving,
   addMedicationLine,
   updateMedicationLine,
   removeMedicationLine,
@@ -847,6 +1221,9 @@ function OrdonnanceFormDialog({
   onOpenChange: (open: boolean) => void;
   form: Ordonnance;
   setForm: React.Dispatch<React.SetStateAction<Ordonnance>>;
+  patients: ApiPatient[];
+  demoMode: boolean;
+  saving: boolean;
   addMedicationLine: () => void;
   updateMedicationLine: (id: string, patch: Partial<MedicationLine>) => void;
   removeMedicationLine: (id: string) => void;
@@ -869,7 +1246,30 @@ function OrdonnanceFormDialog({
           <section className="grid gap-4 rounded-2xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
             <div className="grid gap-2 lg:col-span-2">
               <Label>Patient</Label>
-              <Input value={form.patient} onChange={(event) => setForm((current) => ({ ...current, patient: event.target.value }))} />
+              {demoMode ? (
+                <Input value={form.patient} onChange={(event) => setForm((current) => ({ ...current, patient: event.target.value }))} />
+              ) : (
+                <Select
+                  value={form.patientId || ""}
+                  onValueChange={(patientId) => {
+                    const patient = patients.find((item) => item.id === patientId);
+                    setForm((current) => ({
+                      ...current,
+                      patientId,
+                      patient: patient?.full_name || "",
+                      age: patient?.age ? String(patient.age) : "",
+                      telephone: patient?.phone || "",
+                    }));
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Choisir un patient" /></SelectTrigger>
+                  <SelectContent>
+                    {patients.map((patient) => (
+                      <SelectItem key={patient.id} value={patient.id}>{patient.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label>Âge</Label>
@@ -964,8 +1364,8 @@ function OrdonnanceFormDialog({
             <Button variant="outline" onClick={sendWhatsApp}><MessageCircle className="size-4" /> Envoyer WhatsApp</Button>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={saveDraft}>Enregistrer brouillon</Button>
-            <Button onClick={finalize}>Finaliser ordonnance</Button>
+            <Button variant="outline" onClick={saveDraft} disabled={saving}>Enregistrer brouillon</Button>
+            <Button onClick={finalize} disabled={saving}>Finaliser ordonnance</Button>
           </div>
         </DialogFooter>
       </DialogContent>
