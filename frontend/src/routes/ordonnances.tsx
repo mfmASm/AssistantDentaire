@@ -1008,9 +1008,11 @@ function OrdonnancesPage() {
         await generatePrescriptionPdf(ordonnance.id);
         const signed = await getPrescriptionPdfUrl(ordonnance.id);
         window.open(signed.url, "_blank", "noopener,noreferrer");
+        toast.success("PDF téléchargé.");
       } catch {
         toast.error("Impossible de générer le PDF pour le moment.");
       }
+      return;
     }
     const blob = createPdfBlob(ordonnance);
     const url = URL.createObjectURL(blob);

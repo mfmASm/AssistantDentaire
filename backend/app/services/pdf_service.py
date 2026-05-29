@@ -3,6 +3,12 @@ from html import escape
 
 from app.services.storage_service import upload_pdf_bytes
 
+PDF_GENERATION_ERROR = "Impossible de générer le PDF pour le moment."
+
+
+class PdfGenerationError(RuntimeError):
+    pass
+
 
 def _document_html(title: str, cabinet: dict, patient: dict, body: str, reference: str) -> str:
     return f"""
@@ -51,8 +57,12 @@ def generate_document_pdf(title: str, cabinet: dict, patient: dict, body: str, r
     html = _document_html(title, cabinet, patient, body, reference)
     try:
         from weasyprint import HTML
-    except Exception:  # pragma: no cover
-        # Keeps the service boundary usable in environments without native WeasyPrint dependencies.
-        return upload_pdf_bytes(html.encode("utf-8"), storage_path.replace(".pdf", ".html"))
-    pdf = HTML(string=html).write_pdf()
+    except Exception as exc:  # pragma: no cover
+        raise PdfGenerationError(PDF_GENERATION_ERROR) from exc
+    try:
+        pdf = HTML(string=html).write_pdf()
+    except Exception as exc:  # pragma: no cover
+        raise PdfGenerationError(PDF_GENERATION_ERROR) from exc
+    if not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF"):
+        raise PdfGenerationError(PDF_GENERATION_ERROR)
     return upload_pdf_bytes(pdf, storage_path)

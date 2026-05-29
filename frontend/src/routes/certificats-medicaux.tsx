@@ -678,9 +678,11 @@ function MedicalCertificatesPage() {
         await generateMedicalCertificatePdf(certificate.id);
         const signed = await getMedicalCertificatePdfUrl(certificate.id);
         window.open(signed.url, "_blank", "noopener,noreferrer");
+        toast.success("PDF téléchargé.");
       } catch {
         toast.error("Impossible de générer le PDF pour le moment.");
       }
+      return;
     }
     const blob = createPdfBlob(certificate);
     const url = URL.createObjectURL(blob);

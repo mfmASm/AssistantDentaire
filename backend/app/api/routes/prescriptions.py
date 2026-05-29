@@ -6,7 +6,7 @@ from app.api.routes.crud import _supabase_error_detail
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import PrescriptionIn, PrescriptionItemIn
-from app.services.pdf_service import generate_document_pdf
+from app.services.pdf_service import PDF_GENERATION_ERROR, PdfGenerationError, generate_document_pdf
 from app.services.storage_service import create_signed_document_url, storage_path_from_value
 from app.utils.ownership import ensure_patient_in_cabinet, ensure_prescription_in_cabinet
 from app.utils.references import make_reference
@@ -27,6 +27,21 @@ def _validate_status(status: str | None, current_user: AuthUser):
 
 def _get_prescription(prescription_id: str, cabinet_id: str):
     return ensure_prescription_in_cabinet(prescription_id, cabinet_id)
+
+
+def _generate_prescription_pdf(prescription_id: str, current_user: AuthUser):
+    supabase = get_supabase()
+    prescription = _get_prescription(prescription_id, current_user.cabinet_id)
+    patient = supabase.table("patients").select("*").eq("id", prescription["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
+    cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
+    items = supabase.table("prescription_items").select("*").eq("prescription_id", prescription_id).execute().data or []
+    body = "<ul>" + "".join(f"<li><strong>{i.get('medication_name','')}</strong> {i.get('dosage') or ''} {i.get('frequency') or ''} {i.get('duration') or ''}<br />{i.get('instructions') or ''}</li>" for i in items) + "</ul>"
+    if prescription.get("instructions"):
+        body += f"<p>{prescription['instructions']}</p>"
+    storage_path = f"{current_user.cabinet_id}/prescriptions/{prescription_id}.pdf"
+    pdf_path = generate_document_pdf("Ordonnance", cabinet or {}, patient or {}, body, prescription.get("reference") or prescription_id, storage_path)
+    response = supabase.table("prescriptions").update({"pdf_url": pdf_path}).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
+    return response.data[0]
 
 
 @router.get("")
@@ -139,21 +154,12 @@ def mark_sent(prescription_id: str, current_user: AuthUser):
 
 @router.post("/{prescription_id}/generate-pdf")
 def generate_pdf(prescription_id: str, current_user: AuthUser):
-    supabase = get_supabase()
-    prescription = _get_prescription(prescription_id, current_user.cabinet_id)
-    patient = supabase.table("patients").select("*").eq("id", prescription["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
-    cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
-    items = supabase.table("prescription_items").select("*").eq("prescription_id", prescription_id).execute().data or []
-    body = "<ul>" + "".join(f"<li><strong>{i.get('medication_name','')}</strong> {i.get('dosage') or ''} {i.get('frequency') or ''} {i.get('duration') or ''}<br />{i.get('instructions') or ''}</li>" for i in items) + "</ul>"
-    if prescription.get("instructions"):
-        body += f"<p>{prescription['instructions']}</p>"
-    storage_path = f"{current_user.cabinet_id}/prescriptions/{prescription_id}.pdf"
     try:
-        pdf_path = generate_document_pdf("Ordonnance", cabinet or {}, patient or {}, body, prescription.get("reference") or prescription_id, storage_path)
-        response = supabase.table("prescriptions").update({"pdf_url": pdf_path}).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
+        return _generate_prescription_pdf(prescription_id, current_user)
+    except PdfGenerationError as exc:
+        raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="Impossible de générer le PDF pour le moment.") from exc
-    return response.data[0]
+        raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
 
 
 @router.get("/{prescription_id}/pdf-url")
@@ -162,6 +168,14 @@ def get_prescription_pdf_url(prescription_id: str, current_user: AuthUser):
     storage_path = storage_path_from_value(prescription.get("pdf_url"))
     if not storage_path:
         raise HTTPException(status_code=404, detail="Ressource introuvable.")
+    if not storage_path.lower().endswith(".pdf"):
+        try:
+            prescription = _generate_prescription_pdf(prescription_id, current_user)
+            storage_path = storage_path_from_value(prescription.get("pdf_url"))
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="PDF non disponible. Veuillez régénérer le document.") from exc
+    if not storage_path or not storage_path.lower().endswith(".pdf"):
+        raise HTTPException(status_code=409, detail="PDF non disponible. Veuillez régénérer le document.")
     try:
         return {"url": create_signed_document_url(storage_path, 300), "expires_in": 300}
     except Exception as exc:

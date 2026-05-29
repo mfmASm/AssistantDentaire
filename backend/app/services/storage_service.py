@@ -6,9 +6,13 @@ from app.core.supabase import get_supabase
 
 
 def upload_pdf(path: Path, storage_path: str) -> str:
+    if not storage_path.lower().endswith(".pdf"):
+        raise ValueError("Invalid PDF upload")
     settings = get_settings()
     supabase = get_supabase()
     content = path.read_bytes()
+    if not content.startswith(b"%PDF"):
+        raise ValueError("Invalid PDF upload")
     supabase.storage.from_(settings.supabase_storage_bucket).upload(
         storage_path,
         content,
@@ -18,6 +22,8 @@ def upload_pdf(path: Path, storage_path: str) -> str:
 
 
 def upload_pdf_bytes(content: bytes, storage_path: str) -> str:
+    if not storage_path.lower().endswith(".pdf") or not content.startswith(b"%PDF"):
+        raise ValueError("Invalid PDF upload")
     settings = get_settings()
     supabase = get_supabase()
     supabase.storage.from_(settings.supabase_storage_bucket).upload(

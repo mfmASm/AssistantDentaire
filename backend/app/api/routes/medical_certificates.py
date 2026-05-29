@@ -7,7 +7,7 @@ from app.api.routes.crud import _supabase_error_detail
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import CertificateIn
-from app.services.pdf_service import generate_document_pdf
+from app.services.pdf_service import PDF_GENERATION_ERROR, PdfGenerationError, generate_document_pdf
 from app.services.storage_service import create_signed_document_url, storage_path_from_value
 from app.utils.ownership import ensure_certificate_in_cabinet, ensure_patient_in_cabinet
 from app.utils.references import make_reference
@@ -37,6 +37,18 @@ def _rest_duration_days(value: str | None) -> int | None:
     if not match:
         return None
     return int(match.group(0))
+
+
+def _generate_certificate_pdf(certificate_id: str, current_user: AuthUser):
+    supabase = get_supabase()
+    cert = _get_certificate(certificate_id, current_user.cabinet_id)
+    patient = supabase.table("patients").select("*").eq("id", cert["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
+    cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
+    body = f"<p>{cert.get('certificate_text') or cert.get('observations') or ''}</p><p>Motif: {cert.get('motif') or ''}</p><p>Période: {cert.get('start_date') or ''} - {cert.get('end_date') or ''}</p>"
+    storage_path = f"{current_user.cabinet_id}/medical-certificates/{certificate_id}.pdf"
+    pdf_path = generate_document_pdf("Certificat médical", cabinet or {}, patient or {}, body, cert.get("reference") or certificate_id, storage_path)
+    response = supabase.table("medical_certificates").update({"pdf_url": pdf_path}).eq("id", certificate_id).eq("cabinet_id", current_user.cabinet_id).execute()
+    return response.data[0]
 
 
 @router.get("")
@@ -172,18 +184,12 @@ def mark_certificate_sent(certificate_id: str, current_user: AuthUser):
 
 @router.post("/{certificate_id}/generate-pdf")
 def generate_certificate_pdf(certificate_id: str, current_user: AuthUser):
-    supabase = get_supabase()
-    cert = _get_certificate(certificate_id, current_user.cabinet_id)
-    patient = supabase.table("patients").select("*").eq("id", cert["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
-    cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
-    body = f"<p>{cert.get('certificate_text') or cert.get('observations') or ''}</p><p>Motif: {cert.get('motif') or ''}</p><p>Période: {cert.get('start_date') or ''} - {cert.get('end_date') or ''}</p>"
-    storage_path = f"{current_user.cabinet_id}/certificates/{certificate_id}.pdf"
     try:
-        pdf_path = generate_document_pdf("Certificat médical", cabinet or {}, patient or {}, body, cert.get("reference") or certificate_id, storage_path)
-        response = supabase.table("medical_certificates").update({"pdf_url": pdf_path}).eq("id", certificate_id).eq("cabinet_id", current_user.cabinet_id).execute()
+        return _generate_certificate_pdf(certificate_id, current_user)
+    except PdfGenerationError as exc:
+        raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="Impossible de générer le PDF pour le moment.") from exc
-    return response.data[0]
+        raise HTTPException(status_code=500, detail=PDF_GENERATION_ERROR) from exc
 
 
 @router.get("/{certificate_id}/pdf-url")
@@ -192,6 +198,14 @@ def get_certificate_pdf_url(certificate_id: str, current_user: AuthUser):
     storage_path = storage_path_from_value(cert.get("pdf_url"))
     if not storage_path:
         raise HTTPException(status_code=404, detail="Ressource introuvable.")
+    if not storage_path.lower().endswith(".pdf"):
+        try:
+            cert = _generate_certificate_pdf(certificate_id, current_user)
+            storage_path = storage_path_from_value(cert.get("pdf_url"))
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="PDF non disponible. Veuillez régénérer le document.") from exc
+    if not storage_path or not storage_path.lower().endswith(".pdf"):
+        raise HTTPException(status_code=409, detail="PDF non disponible. Veuillez régénérer le document.")
     try:
         return {"url": create_signed_document_url(storage_path, 300), "expires_in": 300}
     except Exception as exc:
