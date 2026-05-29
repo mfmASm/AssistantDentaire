@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 import {
   Copy,
   Download,
@@ -31,7 +31,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { addDays, currentMonthPrefix, formatShortDate, relativeISO, todayISO } from "@/lib/date-utils";
+import { DEMO_MODE_EVENT, demoCertificates, demoPatients, isDemoMode } from "@/lib/demoMode";
+import { canFinalizeMedicalDocuments, normalizeRole, type AppRole } from "@/lib/roles";
 import { fillWhatsAppTemplate, openWhatsAppMessage, whatsappTemplates } from "@/lib/whatsapp";
+import { authApi, type AuthMe } from "@/services/authApi";
+import {
+  createMedicalCertificate,
+  duplicateMedicalCertificate,
+  generateMedicalCertificatePdf,
+  getMedicalCertificate,
+  getMedicalCertificates,
+  markMedicalCertificateSent,
+  type ApiMedicalCertificate,
+  type MedicalCertificatePayload,
+  updateMedicalCertificate,
+} from "@/services/medicalCertificatesApi";
+import { patientsApi, type ApiPatient } from "@/services/patientsApi";
+import { whatsappApi } from "@/services/whatsappApi";
 
 export const Route = createFileRoute("/certificats-medicaux")({
   head: () => ({
@@ -55,6 +71,7 @@ type CertificateType =
 
 type MedicalCertificate = {
   id: string;
+  patientId?: string;
   reference: string;
   date: string;
   patient: string;
@@ -70,6 +87,7 @@ type MedicalCertificate = {
   notesInternes: string;
   texte: string;
   statut: CertificateStatus;
+  pdfUrl?: string | null;
 };
 
 type CertificateTemplate = {
@@ -310,8 +328,78 @@ const statusTone = (status: CertificateStatus) => {
 const formatDate = (date: string) =>
   new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
 
+const normalizeStatus = (status?: string): CertificateStatus => {
+  if (status === "Finalisé" || status === "Finalisee" || status === "Finalise" || status === "Validé" || status === "Valide") return "Finalisé";
+  if (status === "Envoyé" || status === "Envoye") return "Envoyé";
+  if (status === "Imprimé" || status === "Imprime") return "Imprimé";
+  return "Brouillon";
+};
+
+const normalizeCertificateType = (type?: string | null): CertificateType => {
+  if (type && certificateTypes.includes(type as CertificateType)) return type as CertificateType;
+  if (type?.toLowerCase().includes("présence") || type?.toLowerCase().includes("presence")) return "Certificat de présence";
+  if (type?.toLowerCase().includes("soins")) return "Certificat de soins";
+  if (type?.toLowerCase().includes("repos")) return "Certificat de repos";
+  return "Autre";
+};
+
+const toDemoCertificates = (): MedicalCertificate[] =>
+  demoCertificates.map((certificate, index) => {
+    const patient = demoPatients.find((item) => item.full_name === certificate.patient);
+    const startDate = relativeISO(-index);
+    const endDate = relativeISO(certificate.days - index - 1);
+    return {
+      id: certificate.id,
+      patientId: patient?.id,
+      reference: `CERT-DEMO-${String(index + 1).padStart(3, "0")}`,
+      date: startDate,
+      patient: certificate.patient,
+      age: patient?.age ? String(patient.age) : "",
+      telephone: patient?.phone || "",
+      medecin: doctors[0],
+      type: normalizeCertificateType(certificate.type),
+      motif: "Certificat démo",
+      dateDebut: startDate,
+      dateFin: endDate,
+      dureeRepos: `${certificate.days} jour${certificate.days > 1 ? "s" : ""}`,
+      observations: "Certificat de démonstration à vérifier par le médecin.",
+      notesInternes: "Donnée démo locale.",
+      texte: certificateText(certificate.patient, formatShortDate(new Date(startDate)), `${certificate.days} jour${certificate.days > 1 ? "s" : ""}`, formatShortDate(new Date(startDate))),
+      statut: "Brouillon",
+    };
+  });
+
+const toMedicalCertificate = (certificate: ApiMedicalCertificate, patientsById: Record<string, ApiPatient>): MedicalCertificate => {
+  const patient = patientsById[certificate.patient_id];
+  return {
+    id: certificate.id,
+    patientId: certificate.patient_id,
+    reference: certificate.reference || certificate.id,
+    date: certificate.certificate_date || certificate.created_at?.slice(0, 10) || todayISO(),
+    patient: patient?.full_name || "Patient inconnu",
+    age: patient?.age ? String(patient.age) : "",
+    telephone: patient?.phone || "",
+    medecin: doctors[0],
+    type: normalizeCertificateType(certificate.certificate_type),
+    motif: certificate.motif || "",
+    dateDebut: certificate.start_date || certificate.certificate_date || todayISO(),
+    dateFin: certificate.end_date || certificate.start_date || certificate.certificate_date || todayISO(),
+    dureeRepos: certificate.rest_duration || "",
+    observations: certificate.observations || "",
+    notesInternes: certificate.internal_notes || "",
+    texte: certificate.certificate_text || "",
+    statut: normalizeStatus(certificate.status),
+    pdfUrl: certificate.pdf_url,
+  };
+};
+
 function MedicalCertificatesPage() {
-  const [rows, setRows] = useState<MedicalCertificate[]>(initialCertificates);
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
+  const [rows, setRows] = useState<MedicalCertificate[]>(() => (isDemoMode() ? toDemoCertificates() : []));
+  const [patients, setPatients] = useState<ApiPatient[]>(() => (isDemoMode() ? demoPatients : []));
+  const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -321,6 +409,58 @@ function MedicalCertificatesPage() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [preview, setPreview] = useState<MedicalCertificate | null>(null);
   const [form, setForm] = useState<MedicalCertificate>(blankCertificate());
+
+  const loadRealData = async () => {
+    const [certificatesResponse, patientsResponse] = await Promise.all([
+      getMedicalCertificates(),
+      patientsApi.list(),
+    ]);
+    const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
+    setPatients(patientsResponse);
+    setRows(certificatesResponse.map((certificate) => toMedicalCertificate(certificate, patientsById)));
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    if (demoMode) {
+      setLoading(false);
+      setPatients(demoPatients);
+      setRows(toDemoCertificates());
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoading(true);
+    Promise.all([authApi.me().catch(() => null), loadRealData()])
+      .then(([user]) => {
+        if (!active) return;
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRows([]);
+        toast.error("Impossible de charger les certificats médicaux.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [demoMode]);
+
+  useEffect(() => {
+    const updateDemoMode = () => setDemoModeState(isDemoMode());
+    window.addEventListener(DEMO_MODE_EVENT, updateDemoMode);
+    window.addEventListener("storage", updateDemoMode);
+    return () => {
+      window.removeEventListener(DEMO_MODE_EVENT, updateDemoMode);
+      window.removeEventListener("storage", updateDemoMode);
+    };
+  }, []);
 
   const filtered = useMemo(
     () =>
@@ -339,11 +479,122 @@ function MedicalCertificatesPage() {
   );
 
   const openNew = (seed?: Partial<MedicalCertificate>) => {
+    if (!demoMode && patients.length === 0) {
+      toast.error("Ajoutez d'abord un patient avant de créer un certificat.");
+      return;
+    }
     setForm({ ...blankCertificate(), ...seed, id: "", reference: "", statut: "Brouillon" });
     setFormOpen(true);
   };
 
-  const saveCertificate = (statut: CertificateStatus) => {
+  const makeCertificatePayload = (statut: CertificateStatus): MedicalCertificatePayload | null => {
+    const patientId = form.patientId || patients.find((patient) => patient.full_name === form.patient)?.id;
+    if (!patientId) return null;
+    return {
+      patient_id: patientId,
+      certificate_date: form.date,
+      certificate_type: form.type,
+      motif: form.motif.trim() || null,
+      start_date: form.dateDebut || null,
+      end_date: form.dateFin || null,
+      rest_duration: form.dureeRepos.trim() || null,
+      observations: form.observations.trim() || null,
+      internal_notes: form.notesInternes.trim() || null,
+      certificate_text: form.texte.trim() || null,
+      status: statut,
+    };
+  };
+
+  const getCurrentUserRole = async () => {
+    const role = normalizeRole(currentUser?.role as AppRole);
+    if (role) return role;
+
+    try {
+      const user = await authApi.me();
+      setCurrentUser(user);
+      return normalizeRole(user.role as AppRole);
+    } catch {
+      return undefined;
+    }
+  };
+
+  const editDraftCertificate = async (certificate: MedicalCertificate) => {
+    if (certificate.statut !== "Brouillon") return;
+
+    if (demoMode) {
+      setForm(certificate);
+      setFormOpen(true);
+      return;
+    }
+
+    try {
+      const response = await getMedicalCertificate(certificate.id);
+      const patientsById = Object.fromEntries(patients.map((patient) => [patient.id, patient]));
+      setForm(toMedicalCertificate(response, patientsById));
+      setFormOpen(true);
+    } catch (error) {
+      console.error("Medical certificate fetch failed before edit", error);
+      toast.error("Impossible d'ouvrir le brouillon.");
+    }
+  };
+
+  const openPreview = async (certificate: MedicalCertificate) => {
+    if (demoMode) {
+      setPreview(certificate);
+      return;
+    }
+
+    try {
+      const response = await getMedicalCertificate(certificate.id);
+      const patientsById = Object.fromEntries(patients.map((patient) => [patient.id, patient]));
+      setPreview(toMedicalCertificate(response, patientsById));
+    } catch (error) {
+      console.error("Medical certificate fetch failed before preview", error);
+      setPreview(certificate);
+      toast.error("Impossible de charger le détail du certificat.");
+    }
+  };
+
+  const saveCertificate = async (statut: CertificateStatus) => {
+    if (!demoMode && statut === "Finalisé") {
+      const role = await getCurrentUserRole();
+      if (!role) {
+        console.warn("Missing user role for medical document finalization");
+        toast.error("Seul le docteur peut finaliser les documents médicaux.");
+        return;
+      }
+      if (!canFinalizeMedicalDocuments(role)) {
+        toast.error("Seul le docteur peut finaliser les documents médicaux.");
+        return;
+      }
+    }
+
+    if (!demoMode) {
+      const payload = makeCertificatePayload(statut);
+      if (!payload) {
+        toast.error("Veuillez sélectionner un patient existant.");
+        return;
+      }
+      setSaving(true);
+      try {
+        if (form.id) {
+          await updateMedicalCertificate(form.id, payload);
+          toast.success(statut === "Brouillon" ? "Brouillon mis à jour avec succès." : "Certificat finalisé avec succès.");
+        } else {
+          await createMedicalCertificate(payload);
+          toast.success("Certificat enregistré avec succès.");
+        }
+        await loadRealData();
+        setFormOpen(false);
+      } catch (error) {
+        console.error("Medical certificate save failed", error);
+        toast.error(form.id ? "Impossible de modifier le brouillon." : "Impossible d'enregistrer le certificat.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const id = form.id || `cert-${Date.now()}`;
     const reference = form.reference || `CERT-${new Date().getFullYear()}-${String(rows.length + 1).padStart(3, "0")}`;
     const certificate = { ...form, id, reference, statut };
@@ -353,7 +604,18 @@ function MedicalCertificatesPage() {
     toast.success(statut === "Brouillon" ? "Certificat enregistré en brouillon." : "Certificat finalisé.");
   };
 
-  const duplicateCertificate = (certificate: MedicalCertificate) => {
+  const duplicateCertificate = async (certificate: MedicalCertificate) => {
+    if (!demoMode) {
+      try {
+        await duplicateMedicalCertificate(certificate.id);
+        await loadRealData();
+        toast.success("Certificat dupliqué avec succès.");
+      } catch {
+        toast.error("Impossible de dupliquer le certificat.");
+      }
+      return;
+    }
+
     const copy = {
       ...certificate,
       id: `cert-${Date.now()}`,
@@ -365,13 +627,31 @@ function MedicalCertificatesPage() {
     toast.success("Certificat médical dupliqué.");
   };
 
-  const sendWhatsApp = (certificate: MedicalCertificate) => {
+  const sendWhatsApp = async (certificate: MedicalCertificate) => {
     const id = certificate.id || `cert-${Date.now()}`;
     const reference = certificate.reference || `CERT-${new Date().getFullYear()}-${String(rows.length + 1).padStart(3, "0")}`;
     toast.info("WhatsApp Web va s’ouvrir avec le message pré-rempli. Pour envoyer un document, téléchargez le PDF puis joignez-le manuellement dans WhatsApp.");
     toast.info("Veuillez joindre le PDF téléchargé dans WhatsApp avant l’envoi.");
     const message = fillWhatsAppTemplate(whatsappTemplates.certificate, { Patient: certificate.patient });
     if (!openWhatsAppMessage(certificate.telephone, message)) return;
+    if (!demoMode && certificate.id) {
+      try {
+        await markMedicalCertificateSent(certificate.id);
+        await loadRealData();
+      } catch {
+        toast.error("Impossible de mettre à jour le statut du certificat.");
+      }
+      whatsappApi
+        .create({
+          patient_id: certificate.patientId,
+          type: "Certificat",
+          message,
+          phone: certificate.telephone,
+          status: "Préparé",
+        })
+        .catch(() => undefined);
+      return;
+    }
     const sentCertificate = { ...certificate, id, reference, statut: "Envoyé" as CertificateStatus };
     setRows((current) =>
       current.some((row) => row.id === id)
@@ -392,10 +672,20 @@ function MedicalCertificatesPage() {
     popup.document.close();
     popup.focus();
     popup.print();
+    if (!demoMode && certificate.patientId) {
+      updateMedicalCertificate(certificate.id, { patient_id: certificate.patientId, status: "Imprimé" }).catch(() => undefined);
+    }
     setRows((current) => current.map((row) => (row.id === certificate.id ? { ...row, statut: "Imprimé" } : row)));
   };
 
   const downloadCertificate = (certificate: MedicalCertificate) => {
+    if (!demoMode && certificate.id) {
+      generateMedicalCertificatePdf(certificate.id)
+        .then((updated) => {
+          if (updated.pdf_url) window.open(updated.pdf_url, "_blank", "noopener,noreferrer");
+        })
+        .catch(() => toast.error("Impossible de générer le PDF pour le moment."));
+    }
     const blob = createPdfBlob(certificate);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -507,7 +797,17 @@ function MedicalCertificatesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((certificate) => (
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">Chargement des certificats médicaux...</TableCell>
+                  </TableRow>
+                )}
+                {!loading && filtered.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">Aucun certificat à afficher.</TableCell>
+                  </TableRow>
+                )}
+                {!loading && filtered.map((certificate) => (
                   <TableRow key={certificate.id}>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDate(certificate.date)}</TableCell>
                     <TableCell className="font-medium">{certificate.patient}</TableCell>
@@ -518,7 +818,10 @@ function MedicalCertificatesPage() {
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{certificate.medecin}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => setPreview(certificate)}>Voir</Button>
+                        <Button variant="ghost" size="sm" onClick={() => openPreview(certificate)}>Voir</Button>
+                        {certificate.statut === "Brouillon" && (
+                          <Button variant="ghost" size="sm" onClick={() => editDraftCertificate(certificate)}><Pencil className="size-4" /> Modifier</Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => duplicateCertificate(certificate)}><Copy className="size-4" /> Dupliquer</Button>
                         <Button variant="ghost" size="sm" onClick={() => printCertificate(certificate)}><Printer className="size-4" /> Imprimer</Button>
                         <Button variant="ghost" size="sm" onClick={() => downloadCertificate(certificate)}><Download className="size-4" /> Télécharger PDF</Button>
@@ -538,6 +841,9 @@ function MedicalCertificatesPage() {
         onOpenChange={setFormOpen}
         form={form}
         setForm={setForm}
+        patients={patients}
+        demoMode={demoMode}
+        saving={saving}
         saveDraft={() => saveCertificate("Brouillon")}
         finalize={() => saveCertificate("Finalisé")}
         download={() => downloadCertificate({ ...form, reference: form.reference || `CERT-${new Date().getFullYear()}-DEMO` })}
@@ -555,6 +861,9 @@ function CertificateFormDialog({
   onOpenChange,
   form,
   setForm,
+  patients,
+  demoMode,
+  saving,
   saveDraft,
   finalize,
   download,
@@ -565,6 +874,9 @@ function CertificateFormDialog({
   onOpenChange: (open: boolean) => void;
   form: MedicalCertificate;
   setForm: Dispatch<SetStateAction<MedicalCertificate>>;
+  patients: ApiPatient[];
+  demoMode: boolean;
+  saving: boolean;
   saveDraft: () => void;
   finalize: () => void;
   download: () => void;
@@ -585,7 +897,30 @@ function CertificateFormDialog({
           <section className="grid gap-4 rounded-2xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
             <div className="grid gap-2 lg:col-span-2">
               <Label>Patient</Label>
-              <Input value={form.patient} onChange={(event) => setForm((current) => ({ ...current, patient: event.target.value }))} />
+              {demoMode ? (
+                <Input value={form.patient} onChange={(event) => setForm((current) => ({ ...current, patient: event.target.value }))} />
+              ) : (
+                <Select
+                  value={form.patientId || ""}
+                  onValueChange={(patientId) => {
+                    const patient = patients.find((item) => item.id === patientId);
+                    setForm((current) => ({
+                      ...current,
+                      patientId,
+                      patient: patient?.full_name || "",
+                      age: patient?.age ? String(patient.age) : "",
+                      telephone: patient?.phone || "",
+                    }));
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Choisir un patient" /></SelectTrigger>
+                  <SelectContent>
+                    {patients.map((patient) => (
+                      <SelectItem key={patient.id} value={patient.id}>{patient.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label>Âge</Label>
@@ -662,8 +997,8 @@ function CertificateFormDialog({
             <Button variant="outline" onClick={sendWhatsApp}><MessageCircle className="size-4" /> Envoyer WhatsApp</Button>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={saveDraft}>Enregistrer brouillon</Button>
-            <Button onClick={finalize}>Finaliser certificat</Button>
+            <Button variant="outline" onClick={saveDraft} disabled={saving}>Enregistrer brouillon</Button>
+            <Button onClick={finalize} disabled={saving}>Finaliser certificat</Button>
           </div>
         </DialogFooter>
       </DialogContent>
