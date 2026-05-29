@@ -51,6 +51,7 @@ import {
   createPrescription,
   duplicatePrescription,
   generatePrescriptionPdf,
+  getPrescriptionPdfUrl,
   getPrescription,
   getPrescriptions,
   markPrescriptionSent,
@@ -1001,13 +1002,15 @@ function OrdonnancesPage() {
     setRows((current) => current.map((row) => (row.id === ordonnance.id ? { ...row, statut: "Imprimée" } : row)));
   };
 
-  const downloadOrdonnance = (ordonnance: Ordonnance) => {
+  const downloadOrdonnance = async (ordonnance: Ordonnance) => {
     if (!demoMode && ordonnance.id) {
-      generatePrescriptionPdf(ordonnance.id)
-        .then((updated) => {
-          if (updated.pdf_url) window.open(updated.pdf_url, "_blank", "noopener,noreferrer");
-        })
-        .catch(() => toast.error("Impossible de générer le PDF pour le moment."));
+      try {
+        await generatePrescriptionPdf(ordonnance.id);
+        const signed = await getPrescriptionPdfUrl(ordonnance.id);
+        window.open(signed.url, "_blank", "noopener,noreferrer");
+      } catch {
+        toast.error("Impossible de générer le PDF pour le moment.");
+      }
     }
     const blob = createPdfBlob(ordonnance);
     const url = URL.createObjectURL(blob);

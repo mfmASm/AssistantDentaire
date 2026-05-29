@@ -6,6 +6,11 @@ from app.api.routes.crud import _supabase_error_detail
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import ReviewIn, ReviewUpdate
+from app.utils.ownership import (
+    ensure_appointment_in_cabinet,
+    ensure_patient_in_cabinet,
+    ensure_review_request_in_cabinet,
+)
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
@@ -17,6 +22,9 @@ def list_reviews(current_user: AuthUser):
 
 @router.post("")
 def create_review(payload: ReviewIn, current_user: AuthUser):
+    ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
+    if payload.appointment_id:
+        ensure_appointment_in_cabinet(payload.appointment_id, current_user.cabinet_id)
     insert_payload = {
         "cabinet_id": current_user.cabinet_id,
         "patient_id": str(payload.patient_id),
@@ -34,7 +42,13 @@ def create_review(payload: ReviewIn, current_user: AuthUser):
 
 @router.put("/{review_id}")
 def update_review(review_id: str, payload: ReviewUpdate, current_user: AuthUser):
+    ensure_review_request_in_cabinet(review_id, current_user.cabinet_id)
     update_payload = payload.model_dump(exclude_unset=True, mode="json")
+    update_payload.pop("cabinet_id", None)
+    if update_payload.get("patient_id"):
+        ensure_patient_in_cabinet(update_payload["patient_id"], current_user.cabinet_id)
+    if update_payload.get("appointment_id"):
+        ensure_appointment_in_cabinet(update_payload["appointment_id"], current_user.cabinet_id)
     if update_payload.get("status") == "Envoyé" and "sent_at" not in update_payload:
         update_payload["sent_at"] = datetime.now(timezone.utc).isoformat()
     if update_payload.get("status") == "Avis reçu" and "reviewed_at" not in update_payload:
@@ -57,6 +71,7 @@ def update_review(review_id: str, payload: ReviewUpdate, current_user: AuthUser)
 
 @router.delete("/{review_id}")
 def delete_review(review_id: str, current_user: AuthUser):
+    ensure_review_request_in_cabinet(review_id, current_user.cabinet_id)
     response = (
         get_supabase()
         .table("review_requests")
@@ -72,6 +87,7 @@ def delete_review(review_id: str, current_user: AuthUser):
 
 @router.post("/{review_id}/mark-sent")
 def mark_sent(review_id: str, current_user: AuthUser):
+    ensure_review_request_in_cabinet(review_id, current_user.cabinet_id)
     try:
         response = (
             get_supabase()
@@ -90,6 +106,7 @@ def mark_sent(review_id: str, current_user: AuthUser):
 
 @router.post("/{review_id}/mark-reviewed")
 def mark_reviewed(review_id: str, current_user: AuthUser):
+    ensure_review_request_in_cabinet(review_id, current_user.cabinet_id)
     try:
         response = (
             get_supabase()

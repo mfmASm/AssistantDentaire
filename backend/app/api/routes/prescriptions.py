@@ -7,6 +7,8 @@ from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import PrescriptionIn, PrescriptionItemIn
 from app.services.pdf_service import generate_document_pdf
+from app.services.storage_service import create_signed_document_url, storage_path_from_value
+from app.utils.ownership import ensure_patient_in_cabinet, ensure_prescription_in_cabinet
 from app.utils.references import make_reference
 
 router = APIRouter(prefix="/prescriptions", tags=["prescriptions"])
@@ -24,10 +26,7 @@ def _validate_status(status: str | None, current_user: AuthUser):
 
 
 def _get_prescription(prescription_id: str, cabinet_id: str):
-    response = get_supabase().table("prescriptions").select("*").eq("id", prescription_id).eq("cabinet_id", cabinet_id).single().execute()
-    if not response.data:
-        raise HTTPException(status_code=404, detail="Not found")
-    return response.data
+    return ensure_prescription_in_cabinet(prescription_id, cabinet_id)
 
 
 @router.get("")
@@ -45,6 +44,7 @@ def get_prescription(prescription_id: str, current_user: AuthUser):
 @router.post("")
 def create_prescription(payload: PrescriptionIn, current_user: AuthUser):
     _validate_status(payload.status, current_user)
+    ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
     data = payload.model_dump(exclude={"items"}, exclude_unset=True, mode="json")
     data["cabinet_id"] = current_user.cabinet_id
     data.setdefault("doctor_id", current_user.id)
@@ -62,7 +62,10 @@ def create_prescription(payload: PrescriptionIn, current_user: AuthUser):
 @router.put("/{prescription_id}")
 def update_prescription(prescription_id: str, payload: PrescriptionIn, current_user: AuthUser):
     _validate_status(payload.status, current_user)
+    _get_prescription(prescription_id, current_user.cabinet_id)
+    ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
     data = payload.model_dump(exclude={"items"}, exclude_unset=True, mode="json")
+    data.pop("cabinet_id", None)
     try:
         response = get_supabase().table("prescriptions").update(data).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
         if "items" in payload.model_fields_set:
@@ -79,6 +82,7 @@ def update_prescription(prescription_id: str, payload: PrescriptionIn, current_u
 
 @router.delete("/{prescription_id}")
 def delete_prescription(prescription_id: str, current_user: AuthUser):
+    _get_prescription(prescription_id, current_user.cabinet_id)
     response = get_supabase().table("prescriptions").delete().eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
     if not response.data:
         raise HTTPException(status_code=404, detail="Not found")
@@ -126,6 +130,7 @@ def finalize_prescription(prescription_id: str, current_user: AuthUser):
 
 @router.post("/{prescription_id}/mark-sent")
 def mark_sent(prescription_id: str, current_user: AuthUser):
+    _get_prescription(prescription_id, current_user.cabinet_id)
     response = get_supabase().table("prescriptions").update({"status": "Envoyée", "updated_at": datetime.now(timezone.utc).isoformat()}).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
     if not response.data:
         raise HTTPException(status_code=404, detail="Not found")
@@ -142,8 +147,25 @@ def generate_pdf(prescription_id: str, current_user: AuthUser):
     body = "<ul>" + "".join(f"<li><strong>{i.get('medication_name','')}</strong> {i.get('dosage') or ''} {i.get('frequency') or ''} {i.get('duration') or ''}<br />{i.get('instructions') or ''}</li>" for i in items) + "</ul>"
     if prescription.get("instructions"):
         body += f"<p>{prescription['instructions']}</p>"
-    pdf_url = generate_document_pdf("Ordonnance", cabinet or {}, patient or {}, body, prescription.get("reference") or prescription_id, f"{current_user.cabinet_id}/prescriptions/{prescription_id}.pdf")
-    return supabase.table("prescriptions").update({"pdf_url": pdf_url}).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute().data[0]
+    storage_path = f"{current_user.cabinet_id}/prescriptions/{prescription_id}.pdf"
+    try:
+        pdf_path = generate_document_pdf("Ordonnance", cabinet or {}, patient or {}, body, prescription.get("reference") or prescription_id, storage_path)
+        response = supabase.table("prescriptions").update({"pdf_url": pdf_path}).eq("id", prescription_id).eq("cabinet_id", current_user.cabinet_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Impossible de générer le PDF pour le moment.") from exc
+    return response.data[0]
+
+
+@router.get("/{prescription_id}/pdf-url")
+def get_prescription_pdf_url(prescription_id: str, current_user: AuthUser):
+    prescription = _get_prescription(prescription_id, current_user.cabinet_id)
+    storage_path = storage_path_from_value(prescription.get("pdf_url"))
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="Ressource introuvable.")
+    try:
+        return {"url": create_signed_document_url(storage_path, 300), "expires_in": 300}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Impossible de générer le PDF pour le moment.") from exc
 
 
 @router.get("/{prescription_id}/items")

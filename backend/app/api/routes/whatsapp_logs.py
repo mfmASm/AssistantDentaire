@@ -7,8 +7,11 @@ from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import WhatsAppLogIn
 from app.services.whatsapp_service import build_whatsapp_response
+from app.utils.ownership import ensure_patient_in_cabinet
 
 router = APIRouter(prefix="/whatsapp-logs", tags=["whatsapp-logs"])
+
+NON_PATIENT_LOG_TYPES = {"general", "cabinet_message"}
 
 
 @router.get("")
@@ -27,6 +30,10 @@ def list_logs(current_user: AuthUser):
 @router.post("")
 def create_log(payload: WhatsAppLogIn, current_user: AuthUser):
     data = payload.model_dump(mode="json")
+    if payload.patient_id:
+        ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
+    elif (payload.type or "").strip() not in NON_PATIENT_LOG_TYPES:
+        raise HTTPException(status_code=404, detail="Patient introuvable.")
     data["cabinet_id"] = current_user.cabinet_id
     data["sent_by"] = current_user.id
     data["sent_at"] = datetime.now(timezone.utc).isoformat()

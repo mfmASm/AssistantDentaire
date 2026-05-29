@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import AppointmentIn, AppointmentUpdate
+from app.utils.ownership import ensure_appointment_in_cabinet, ensure_patient_in_cabinet
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
@@ -52,6 +53,7 @@ def get_appointment(appointment_id: str, current_user: AuthUser):
 
 @router.post("")
 def create_appointment(payload: AppointmentIn, current_user: AuthUser):
+    ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
     data = payload.model_dump(exclude_unset=True, mode="json")
     data["cabinet_id"] = current_user.cabinet_id
     response = get_supabase().table("appointments").insert(data).execute()
@@ -63,11 +65,12 @@ def create_appointment(payload: AppointmentIn, current_user: AuthUser):
 
 @router.put("/{appointment_id}")
 def update_appointment(appointment_id: str, payload: AppointmentUpdate, current_user: AuthUser):
-    if not _scoped_appointment(appointment_id, current_user.cabinet_id):
-        raise HTTPException(status_code=404, detail="Not found")
+    ensure_appointment_in_cabinet(appointment_id, current_user.cabinet_id)
 
     data = payload.model_dump(exclude_unset=True, mode="json")
     data.pop("cabinet_id", None)
+    if data.get("patient_id"):
+        ensure_patient_in_cabinet(data["patient_id"], current_user.cabinet_id)
     response = (
         get_supabase()
         .table("appointments")
@@ -81,8 +84,7 @@ def update_appointment(appointment_id: str, payload: AppointmentUpdate, current_
 
 @router.delete("/{appointment_id}")
 def delete_appointment(appointment_id: str, current_user: AuthUser):
-    if not _scoped_appointment(appointment_id, current_user.cabinet_id):
-        raise HTTPException(status_code=404, detail="Not found")
+    ensure_appointment_in_cabinet(appointment_id, current_user.cabinet_id)
 
     (
         get_supabase()

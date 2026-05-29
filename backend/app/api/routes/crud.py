@@ -5,6 +5,11 @@ from pydantic import BaseModel
 
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
+from app.utils.ownership import (
+    ensure_favorite_medication_in_cabinet,
+    ensure_patient_in_cabinet,
+    ensure_recall_in_cabinet,
+)
 
 
 def _apply_scope(query, cabinet_id: str):
@@ -30,6 +35,18 @@ def _supabase_error_detail(exc: Exception) -> Any:
     return str(exc)
 
 
+def _validate_references(table: str, data: dict[str, Any], cabinet_id: str) -> None:
+    if table == "recalls" and data.get("patient_id"):
+        ensure_patient_in_cabinet(data["patient_id"], cabinet_id)
+
+
+def _ensure_owned_row(table: str, row_id: str, cabinet_id: str) -> None:
+    if table == "recalls":
+        ensure_recall_in_cabinet(row_id, cabinet_id)
+    elif table == "favorite_medications":
+        ensure_favorite_medication_in_cabinet(row_id, cabinet_id)
+
+
 def create_crud_router(table: str, schema: Type[BaseModel], prefix: str, tags: list[str]) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=tags)
 
@@ -48,6 +65,7 @@ def create_crud_router(table: str, schema: Type[BaseModel], prefix: str, tags: l
     @router.post("")
     def create_row(payload: schema, current_user: AuthUser):  # type: ignore[valid-type]
         insert_payload = _tenant_payload(payload, current_user.cabinet_id)
+        _validate_references(table, insert_payload, current_user.cabinet_id)
         try:
             response = get_supabase().table(table).insert(insert_payload).execute()
         except Exception as exc:
@@ -56,8 +74,12 @@ def create_crud_router(table: str, schema: Type[BaseModel], prefix: str, tags: l
 
     @router.put("/{row_id}")
     def update_row(row_id: str, payload: schema, current_user: AuthUser):  # type: ignore[valid-type]
+        _ensure_owned_row(table, row_id, current_user.cabinet_id)
+        update_payload = payload.model_dump(exclude_unset=True, mode="json")
+        update_payload.pop("cabinet_id", None)
+        _validate_references(table, update_payload, current_user.cabinet_id)
         response = (
-            _apply_scope(get_supabase().table(table).update(payload.model_dump(exclude_unset=True)).eq("id", row_id), current_user.cabinet_id)
+            _apply_scope(get_supabase().table(table).update(update_payload).eq("id", row_id), current_user.cabinet_id)
             .execute()
         )
         if not response.data:
@@ -66,6 +88,7 @@ def create_crud_router(table: str, schema: Type[BaseModel], prefix: str, tags: l
 
     @router.delete("/{row_id}")
     def delete_row(row_id: str, current_user: AuthUser):
+        _ensure_owned_row(table, row_id, current_user.cabinet_id)
         response = _apply_scope(get_supabase().table(table).delete().eq("id", row_id), current_user.cabinet_id).execute()
         if not response.data:
             raise HTTPException(status_code=404, detail="Not found")

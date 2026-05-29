@@ -42,6 +42,8 @@ export const markMedicalCertificateSent = (id: string) =>
   apiFetch<ApiMedicalCertificate>(`/medical-certificates/${id}/mark-sent`, { method: "POST", body: jsonBody({}) });
 export const generateMedicalCertificatePdf = (id: string) =>
   apiFetch<ApiMedicalCertificate>(`/medical-certificates/${id}/generate-pdf`, { method: "POST", body: jsonBody({}) });
+export const getMedicalCertificatePdfUrl = (id: string) =>
+  apiFetch<{ url: string; expires_in: number }>(`/medical-certificates/${id}/pdf-url`);
 
 export const medicalCertificatesApi = {
   list: getMedicalCertificates,
@@ -52,6 +54,7 @@ export const medicalCertificatesApi = {
   duplicate: duplicateMedicalCertificate,
   markSent: markMedicalCertificateSent,
   generatePdf: generateMedicalCertificatePdf,
+  getPdfUrl: getMedicalCertificatePdfUrl,
   getMedicalCertificates,
   getMedicalCertificate,
   createMedicalCertificate,
@@ -60,4 +63,5 @@ export const medicalCertificatesApi = {
   duplicateMedicalCertificate,
   markMedicalCertificateSent,
   generateMedicalCertificatePdf,
+  getMedicalCertificatePdfUrl,
 };

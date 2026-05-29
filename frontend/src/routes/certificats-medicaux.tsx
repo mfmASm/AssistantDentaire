@@ -39,6 +39,7 @@ import {
   createMedicalCertificate,
   duplicateMedicalCertificate,
   generateMedicalCertificatePdf,
+  getMedicalCertificatePdfUrl,
   getMedicalCertificate,
   getMedicalCertificates,
   markMedicalCertificateSent,
@@ -671,13 +672,15 @@ function MedicalCertificatesPage() {
     setRows((current) => current.map((row) => (row.id === certificate.id ? { ...row, statut: "Imprimé" } : row)));
   };
 
-  const downloadCertificate = (certificate: MedicalCertificate) => {
+  const downloadCertificate = async (certificate: MedicalCertificate) => {
     if (!demoMode && certificate.id) {
-      generateMedicalCertificatePdf(certificate.id)
-        .then((updated) => {
-          if (updated.pdf_url) window.open(updated.pdf_url, "_blank", "noopener,noreferrer");
-        })
-        .catch(() => toast.error("Impossible de générer le PDF pour le moment."));
+      try {
+        await generateMedicalCertificatePdf(certificate.id);
+        const signed = await getMedicalCertificatePdfUrl(certificate.id);
+        window.open(signed.url, "_blank", "noopener,noreferrer");
+      } catch {
+        toast.error("Impossible de générer le PDF pour le moment.");
+      }
     }
     const blob = createPdfBlob(certificate);
     const url = URL.createObjectURL(blob);

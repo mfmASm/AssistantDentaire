@@ -52,6 +52,8 @@ export const markPrescriptionSent = (id: string) =>
   apiFetch<ApiPrescription>(`/prescriptions/${id}/mark-sent`, { method: "POST", body: jsonBody({}) });
 export const generatePrescriptionPdf = (id: string) =>
   apiFetch<ApiPrescription>(`/prescriptions/${id}/generate-pdf`, { method: "POST", body: jsonBody({}) });
+export const getPrescriptionPdfUrl = (id: string) =>
+  apiFetch<{ url: string; expires_in: number }>(`/prescriptions/${id}/pdf-url`);
 export const listPrescriptionItems = (id: string) => apiFetch<ApiPrescriptionItem[]>(`/prescriptions/${id}/items`);
 export const createPrescriptionItem = (id: string, payload: PrescriptionItemPayload) =>
   apiFetch<ApiPrescriptionItem>(`/prescriptions/${id}/items`, { method: "POST", body: jsonBody(payload) });
@@ -70,6 +72,7 @@ export const prescriptionsApi = {
   finalize: (id: string) => updatePrescription(id, { status: "Finalisée" }),
   markSent: markPrescriptionSent,
   generatePdf: generatePrescriptionPdf,
+  getPdfUrl: getPrescriptionPdfUrl,
   listItems: listPrescriptionItems,
   createItem: createPrescriptionItem,
   updateItem: updatePrescriptionItem,
@@ -82,4 +85,5 @@ export const prescriptionsApi = {
   duplicatePrescription,
   markPrescriptionSent,
   generatePrescriptionPdf,
+  getPrescriptionPdfUrl,
 };

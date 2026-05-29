@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import PaymentIn, PaymentUpdate
+from app.utils.ownership import ensure_patient_in_cabinet, ensure_payment_in_cabinet
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -134,8 +135,7 @@ def get_payment(payment_id: str, current_user: AuthUser):
 @router.post("")
 def create_payment(payload: PaymentIn, current_user: AuthUser):
     try:
-        if not _patient_in_current_cabinet(payload.patient_id, current_user.cabinet_id):
-            raise HTTPException(status_code=404, detail="Patient introuvable dans ce cabinet.")
+        ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
 
         data = payload.model_dump(exclude_unset=True)
         data = {key: value for key, value in data.items() if key in PAYMENT_COLUMNS}
@@ -160,12 +160,12 @@ def create_payment(payload: PaymentIn, current_user: AuthUser):
 
 @router.put("/{payment_id}")
 def update_payment(payment_id: str, payload: PaymentUpdate, current_user: AuthUser):
-    existing = _scoped_payment(payment_id, current_user.cabinet_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Not found")
+    existing = ensure_payment_in_cabinet(payment_id, current_user.cabinet_id)
 
     data = payload.model_dump(exclude_unset=True)
     data.pop("cabinet_id", None)
+    if data.get("patient_id"):
+        ensure_patient_in_cabinet(data["patient_id"], current_user.cabinet_id)
     data = _serialize_payload(_with_remaining_amount(data, existing))
     response = (
         get_supabase()
@@ -180,8 +180,7 @@ def update_payment(payment_id: str, payload: PaymentUpdate, current_user: AuthUs
 
 @router.delete("/{payment_id}")
 def delete_payment(payment_id: str, current_user: AuthUser):
-    if not _scoped_payment(payment_id, current_user.cabinet_id):
-        raise HTTPException(status_code=404, detail="Not found")
+    ensure_payment_in_cabinet(payment_id, current_user.cabinet_id)
 
     (
         get_supabase()

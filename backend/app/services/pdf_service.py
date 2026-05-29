@@ -1,11 +1,6 @@
 from datetime import date
 from html import escape
 
-try:
-    from weasyprint import HTML
-except Exception:  # pragma: no cover
-    HTML = None
-
 from app.services.storage_service import upload_pdf_bytes
 
 
@@ -54,7 +49,9 @@ def _document_html(title: str, cabinet: dict, patient: dict, body: str, referenc
 
 def generate_document_pdf(title: str, cabinet: dict, patient: dict, body: str, reference: str, storage_path: str) -> str:
     html = _document_html(title, cabinet, patient, body, reference)
-    if HTML is None:
+    try:
+        from weasyprint import HTML
+    except Exception:  # pragma: no cover
         # Keeps the service boundary usable in environments without native WeasyPrint dependencies.
         return upload_pdf_bytes(html.encode("utf-8"), storage_path.replace(".pdf", ".html"))
     pdf = HTML(string=html).write_pdf()

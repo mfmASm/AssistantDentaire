@@ -8,6 +8,8 @@ from app.core.security import AuthUser
 from app.core.supabase import get_supabase
 from app.schemas.common import CertificateIn
 from app.services.pdf_service import generate_document_pdf
+from app.services.storage_service import create_signed_document_url, storage_path_from_value
+from app.utils.ownership import ensure_certificate_in_cabinet, ensure_patient_in_cabinet
 from app.utils.references import make_reference
 
 router = APIRouter(prefix="/medical-certificates", tags=["medical-certificates"])
@@ -25,18 +27,7 @@ def _validate_status(status: str | None, current_user: AuthUser):
 
 
 def _get_certificate(certificate_id: str, cabinet_id: str):
-    response = (
-        get_supabase()
-        .table("medical_certificates")
-        .select("*")
-        .eq("id", certificate_id)
-        .eq("cabinet_id", cabinet_id)
-        .single()
-        .execute()
-    )
-    if not response.data:
-        raise HTTPException(status_code=404, detail="Not found")
-    return response.data
+    return ensure_certificate_in_cabinet(certificate_id, cabinet_id)
 
 
 def _rest_duration_days(value: str | None) -> int | None:
@@ -69,6 +60,7 @@ def get_certificate(certificate_id: str, current_user: AuthUser):
 @router.post("")
 def create_certificate(payload: CertificateIn, current_user: AuthUser):
     _validate_status(payload.status, current_user)
+    ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
     data = payload.model_dump(exclude_unset=True, mode="json")
     data["cabinet_id"] = current_user.cabinet_id
     data["doctor_id"] = current_user.id
@@ -83,6 +75,8 @@ def create_certificate(payload: CertificateIn, current_user: AuthUser):
 @router.put("/{certificate_id}")
 def update_certificate(certificate_id: str, payload: CertificateIn, current_user: AuthUser):
     _validate_status(payload.status, current_user)
+    _get_certificate(certificate_id, current_user.cabinet_id)
+    ensure_patient_in_cabinet(payload.patient_id, current_user.cabinet_id)
     data = payload.model_dump(exclude_unset=True, mode="json")
     data.pop("cabinet_id", None)
     if "doctor_id" in data:
@@ -105,6 +99,7 @@ def update_certificate(certificate_id: str, payload: CertificateIn, current_user
 
 @router.delete("/{certificate_id}")
 def delete_certificate(certificate_id: str, current_user: AuthUser):
+    _get_certificate(certificate_id, current_user.cabinet_id)
     response = (
         get_supabase()
         .table("medical_certificates")
@@ -161,6 +156,7 @@ def finalize_certificate(certificate_id: str, current_user: AuthUser):
 
 @router.post("/{certificate_id}/mark-sent")
 def mark_certificate_sent(certificate_id: str, current_user: AuthUser):
+    _get_certificate(certificate_id, current_user.cabinet_id)
     response = (
         get_supabase()
         .table("medical_certificates")
@@ -181,5 +177,22 @@ def generate_certificate_pdf(certificate_id: str, current_user: AuthUser):
     patient = supabase.table("patients").select("*").eq("id", cert["patient_id"]).eq("cabinet_id", current_user.cabinet_id).single().execute().data
     cabinet = supabase.table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
     body = f"<p>{cert.get('certificate_text') or cert.get('observations') or ''}</p><p>Motif: {cert.get('motif') or ''}</p><p>Période: {cert.get('start_date') or ''} - {cert.get('end_date') or ''}</p>"
-    pdf_url = generate_document_pdf("Certificat médical", cabinet or {}, patient or {}, body, cert.get("reference") or certificate_id, f"{current_user.cabinet_id}/certificates/{certificate_id}.pdf")
-    return supabase.table("medical_certificates").update({"pdf_url": pdf_url}).eq("id", certificate_id).eq("cabinet_id", current_user.cabinet_id).execute().data[0]
+    storage_path = f"{current_user.cabinet_id}/certificates/{certificate_id}.pdf"
+    try:
+        pdf_path = generate_document_pdf("Certificat médical", cabinet or {}, patient or {}, body, cert.get("reference") or certificate_id, storage_path)
+        response = supabase.table("medical_certificates").update({"pdf_url": pdf_path}).eq("id", certificate_id).eq("cabinet_id", current_user.cabinet_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Impossible de générer le PDF pour le moment.") from exc
+    return response.data[0]
+
+
+@router.get("/{certificate_id}/pdf-url")
+def get_certificate_pdf_url(certificate_id: str, current_user: AuthUser):
+    cert = _get_certificate(certificate_id, current_user.cabinet_id)
+    storage_path = storage_path_from_value(cert.get("pdf_url"))
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="Ressource introuvable.")
+    try:
+        return {"url": create_signed_document_url(storage_path, 300), "expires_in": 300}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Impossible de générer le PDF pour le moment.") from exc
