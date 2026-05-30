@@ -5,9 +5,10 @@ import viteReact from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 
-// Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-// @cloudflare/vite-plugin builds from this; wrangler.jsonc main alone is insufficient.
+// Hostinger runs a normal Node.js process. Keep Cloudflare worker output behind
+// an explicit DEPLOY_TARGET so the default production build stays Node-compatible.
 export default defineConfig(({ command, mode }) => {
+  const deployTarget = process.env.DEPLOY_TARGET ?? "node";
   const loadedEnv = loadEnv(mode, process.cwd(), "VITE_");
   const envDefine = Object.fromEntries(
     Object.entries(loadedEnv).map(([key, value]) => [
@@ -44,7 +45,9 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       tailwindcss(),
       tsConfigPaths({ projects: ["./tsconfig.json"] }),
-      ...(command === "build" ? [cloudflare({ viteEnvironment: { name: "ssr" } })] : []),
+      ...(command === "build" && deployTarget === "cloudflare"
+        ? [cloudflare({ viteEnvironment: { name: "ssr" } })]
+        : []),
       tanstackStart({
         importProtection: {
           behavior: "error",
