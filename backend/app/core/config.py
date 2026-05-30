@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str | None = None
     supabase_storage_bucket: str = "dental-documents"
     frontend_url: str = "http://localhost:5173"
+    frontend_urls: str = ""
     api_port: int = 8000
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -16,6 +17,10 @@ class Settings(BaseSettings):
     @property
     def FRONTEND_URL(self) -> str:
         return self.frontend_url
+
+    @property
+    def FRONTEND_URLS(self) -> str:
+        return self.frontend_urls
 
 
 @lru_cache

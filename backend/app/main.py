@@ -23,15 +23,34 @@ config = get_settings()
 
 app = FastAPI(title="AssistantDentaire API", version="0.1.0")
 
-allowed_origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
 
-if config.FRONTEND_URL and config.FRONTEND_URL not in allowed_origins:
-    allowed_origins.append(config.FRONTEND_URL)
+def normalize_origin(origin: str | None) -> str | None:
+    normalized = (origin or "").strip().rstrip("/")
+    return normalized or None
+
+
+def build_allowed_origins() -> list[str]:
+    origins = [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        config.FRONTEND_URL,
+        *config.FRONTEND_URLS.split(","),
+    ]
+
+    allowed: list[str] = []
+    seen: set[str] = set()
+    for origin in origins:
+        normalized = normalize_origin(origin)
+        if normalized and normalized not in seen:
+            allowed.append(normalized)
+            seen.add(normalized)
+    return allowed
+
+
+allowed_origins = build_allowed_origins()
+print("Allowed CORS origins:", allowed_origins)
 
 app.add_middleware(
     CORSMiddleware,
