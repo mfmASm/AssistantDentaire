@@ -229,8 +229,11 @@ const toRealDashboardRecall = (recall: DashboardSummary["due_recalls"][number]):
   status: toRecallStatus(recall.status),
 });
 
-function getUserDisplayName(user: AuthMe | null) {
-  return user?.full_name || user?.email || "Utilisateur";
+function getCabinetGreetingName(user: AuthMe | null) {
+  const cabinet = user?.cabinet;
+  if (!cabinet || typeof cabinet !== "object") return "";
+  const name = typeof cabinet.name === "string" ? cabinet.name.trim() : "";
+  return name;
 }
 
 function Dashboard() {
@@ -267,7 +270,8 @@ function Dashboard() {
     : summary.recent_patients.slice(0, 3).map((patient) => ({ id: patient.id, name: patient.full_name || "Patient", phone: patient.phone || "", source: patient.status || "Patient" }));
   const patientPhone = (patientId?: string, patientName?: string) =>
     patients.find((patient) => patient.id === patientId || patient.name === patientName)?.phone;
-  const pageTitle = demoMode ? "Bonjour Dr. Safaa M'gaassy" : `Bonjour ${getUserDisplayName(currentUser)}`;
+  const cabinetGreetingName = getCabinetGreetingName(currentUser);
+  const pageTitle = demoMode ? "Bonjour Dr. Safaa M'gaassy" : cabinetGreetingName ? `Bonjour ${cabinetGreetingName}` : "Bonjour";
 
   useEffect(() => {
     const updateDemoMode = () => setDemoModeState(isDemoMode());
