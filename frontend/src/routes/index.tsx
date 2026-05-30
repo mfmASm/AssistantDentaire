@@ -46,6 +46,7 @@ import {
   isDemoMode,
 } from "@/lib/demoMode";
 import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
+import { authApi, type AuthMe } from "@/services/authApi";
 import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
 export const Route = createFileRoute("/")({
@@ -228,11 +229,16 @@ const toRealDashboardRecall = (recall: DashboardSummary["due_recalls"][number]):
   status: toRecallStatus(recall.status),
 });
 
+function getUserDisplayName(user: AuthMe | null) {
+  return user?.full_name || user?.email || "Utilisateur";
+}
+
 function Dashboard() {
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const [summary, setSummary] = useState<DashboardSummary>(emptyDashboardSummary);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
 
   const patients = demoMode ? demoPatients.map(toDashboardPatient) : summary.recent_patients.map(toRealDashboardPatient);
   const appointments = demoMode ? demoAppointments.map(toDashboardAppointment) : summary.upcoming_appointments.map(toRealDashboardAppointment);
@@ -261,6 +267,7 @@ function Dashboard() {
     : summary.recent_patients.slice(0, 3).map((patient) => ({ id: patient.id, name: patient.full_name || "Patient", phone: patient.phone || "", source: patient.status || "Patient" }));
   const patientPhone = (patientId?: string, patientName?: string) =>
     patients.find((patient) => patient.id === patientId || patient.name === patientName)?.phone;
+  const pageTitle = demoMode ? "Bonjour Dr. Safaa M'gaassy" : `Bonjour ${getUserDisplayName(currentUser)}`;
 
   useEffect(() => {
     const updateDemoMode = () => setDemoModeState(isDemoMode());
@@ -277,12 +284,20 @@ function Dashboard() {
       setSummary(emptyDashboardSummary);
       setDashboardError(false);
       setDashboardLoading(false);
+      setCurrentUser(null);
       return;
     }
 
     let cancelled = false;
     setDashboardLoading(true);
     setDashboardError(false);
+    authApi.me()
+      .then((user) => {
+        if (!cancelled) setCurrentUser(user);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentUser(null);
+      });
     getDashboardSummary()
       .then((data) => {
         if (!cancelled) setSummary(data);
@@ -342,7 +357,7 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Bonjour Dr. Safaa M'gaassy"
+        title={pageTitle}
         description={`Voici ce qui demande votre attention aujourd'hui — ${formatLongDate()}.`}
         actions={
           <>

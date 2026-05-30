@@ -248,7 +248,7 @@ function AppShell() {
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full overflow-x-hidden bg-background">
-        <AppSidebar />
+        <AppSidebar currentUser={currentUser} />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/80 px-3 backdrop-blur sm:px-6">
             <SidebarTrigger className="shrink-0" />

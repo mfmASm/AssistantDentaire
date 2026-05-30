@@ -18,20 +18,14 @@ export type OnboardResult = {
 export const authApi = {
   signIn: async (email: string, password: string) => {
     const session = await supabaseAuth.signIn(email, password);
-    await authApi.onboard({
-      cabinet_name: "Cabinet AssistantDentaire",
-      full_name: email,
-    });
+    await authApi.ensureOnboarded();
     return session;
   },
 
   signUp: async (email: string, password: string) => {
     const session = await supabaseAuth.signUp(email, password);
     if (session.access_token) {
-      await authApi.onboard({
-        cabinet_name: "Cabinet AssistantDentaire",
-        full_name: email,
-      });
+      await authApi.ensureOnboarded();
     }
     return session;
   },
@@ -50,9 +44,8 @@ export const authApi = {
       return await authApi.me();
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        await authApi.onboard({
-          cabinet_name: "Cabinet AssistantDentaire",
-        });
+        const session = await authApi.session();
+        await authApi.onboard({ full_name: session?.user?.email });
         return authApi.me();
       }
       throw error;

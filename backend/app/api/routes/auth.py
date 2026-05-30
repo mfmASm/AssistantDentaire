@@ -18,6 +18,13 @@ class OnboardPayload(BaseModel):
     full_name: str | None = None
 
 
+def _clean_text(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value or None
+
+
 @router.get("/me")
 def me(current_user: AuthUser):
     return {
@@ -52,23 +59,24 @@ def onboard(payload: OnboardPayload, current_user: AuthenticatedAuthUser):
             cabinet = None
         return {"cabinet": cabinet, "profile": existing_profile}
 
-    cabinet_name = payload.cabinet_name or "Cabinet AssistantDentaire"
+    cabinet_name = _clean_text(payload.cabinet_name) or "Nouveau cabinet"
+    dentist_name = _clean_text(payload.dentist_name) or _clean_text(payload.full_name) or current_user.email
     cabinet = supabase.table("cabinets").insert(
         {
             "name": cabinet_name,
-            "dentist_name": payload.dentist_name,
-            "phone": payload.phone,
-            "city": payload.city,
-            "address": payload.address,
-            "whatsapp_number": payload.whatsapp_number,
-            "google_review_link": payload.google_review_link,
+            "dentist_name": dentist_name,
+            "phone": _clean_text(payload.phone) or "",
+            "city": _clean_text(payload.city) or "",
+            "address": _clean_text(payload.address) or "",
+            "whatsapp_number": _clean_text(payload.whatsapp_number) or "",
+            "google_review_link": _clean_text(payload.google_review_link) or "",
         }
     ).execute().data[0]
 
     profile_payload = {
         "id": current_user.id,
         "email": current_user.email,
-        "full_name": payload.full_name or payload.dentist_name or current_user.email,
+        "full_name": _clean_text(payload.full_name) or dentist_name or current_user.email,
         "role": "admin",
         "cabinet_id": cabinet["id"],
     }
