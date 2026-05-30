@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { Eye, EyeOff, Stethoscope, ShieldCheck, Wallet, Star } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, Wallet, Star } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -133,9 +134,7 @@ function LoginPage() {
     <div className="grid min-h-screen overflow-x-hidden lg:grid-cols-2">
       <div className="flex min-w-0 flex-col justify-between gap-8 p-4 sm:p-10">
         <Link to="/" className="flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] text-primary-foreground">
-            <Stethoscope className="size-5" />
-          </div>
+          <BrandMark />
           <span className="font-display text-lg font-semibold">AssistantDentaire</span>
         </Link>
 

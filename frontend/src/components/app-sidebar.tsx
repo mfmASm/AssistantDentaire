@@ -9,9 +9,9 @@ import {
   Star,
   CalendarDays,
   Settings,
-  Stethoscope,
 } from "lucide-react";
 
+import { BrandMark } from "@/components/brand-mark";
 import {
   Sidebar,
   SidebarContent,
@@ -59,9 +59,7 @@ export function AppSidebar({ currentUser }: AppSidebarProps) {
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="border-b">
         <Link to="/" onClick={closeMobileMenu} className="flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-accent">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] text-primary-foreground shadow-sm">
-            <Stethoscope className="size-5" />
-          </div>
+          <BrandMark className="shadow-sm" />
           {!collapsed && (
             <div className="flex min-w-0 flex-col leading-tight">
               <span className="font-display text-base font-semibold tracking-tight">AssistantDentaire</span>
