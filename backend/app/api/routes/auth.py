@@ -52,7 +52,7 @@ def onboard(payload: OnboardPayload, current_user: AuthenticatedAuthUser):
             cabinet = None
         return {"cabinet": cabinet, "profile": existing_profile}
 
-    cabinet_name = payload.cabinet_name or "Cabinet DentalPilot"
+    cabinet_name = payload.cabinet_name or "Cabinet AssistantDentaire"
     cabinet = supabase.table("cabinets").insert(
         {
             "name": cabinet_name,

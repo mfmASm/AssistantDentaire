@@ -51,7 +51,7 @@ import { getDashboardSummary, type DashboardSummary } from "@/services/dashboard
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Tableau de bord — DentalPilot" },
+      { title: "Tableau de bord — AssistantDentaire" },
       { name: "description", content: "Vue d'ensemble quotidienne du cabinet dentaire : rendez-vous, paiements, rappels et avis." },
     ],
   }),
@@ -406,9 +406,9 @@ function Dashboard() {
                 <TableRow>
                   <TableHead className="w-16">Heure</TableHead>
                   <TableHead>Patient</TableHead>
-                  <TableHead className="hidden md:table-cell">Traitement</TableHead>
+                  <TableHead >Traitement</TableHead>
                   <TableHead>Statut</TableHead>
-                  <TableHead className="hidden sm:table-cell">Paiement</TableHead>
+                  <TableHead >Paiement</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -416,9 +416,9 @@ function Dashboard() {
                   <TableRow key={a.id}>
                     <TableCell className="font-mono text-sm">{a.time}</TableCell>
                     <TableCell className="font-medium">{a.patient}</TableCell>
-                    <TableCell className="hidden md:table-cell text-muted-foreground">{a.treatment}</TableCell>
+                    <TableCell className="text-muted-foreground">{a.treatment}</TableCell>
                     <TableCell><StatusBadge tone={apptTone(a.status)}>{apptLabel(a.status)}</StatusBadge></TableCell>
-                    <TableCell className="hidden sm:table-cell">
+                    <TableCell >
                       <StatusBadge tone={paymentTone(a.paymentStatus)}>{paymentLabel(a.paymentStatus)}</StatusBadge>
                     </TableCell>
                   </TableRow>

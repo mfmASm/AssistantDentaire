@@ -55,7 +55,7 @@ const treatmentPrices = [
 export const Route = createFileRoute("/payments")({
   head: () => ({
     meta: [
-      { title: "Paiements - DentalPilot" },
+      { title: "Paiements - AssistantDentaire" },
       { name: "description", content: "Suivi des paiements patients : impayes, partiels, plans de paiement et relances WhatsApp." },
     ],
   }),
@@ -452,11 +452,11 @@ function PaymentsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Patient</TableHead>
-                  <TableHead className="hidden md:table-cell">Traitement</TableHead>
+                  <TableHead >Traitement</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Progression</TableHead>
                   <TableHead>Reste</TableHead>
-                  <TableHead className="hidden sm:table-cell">Echeance</TableHead>
+                  <TableHead >Echeance</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -483,7 +483,7 @@ function PaymentsPage() {
                         {p.installments && <div className="text-xs text-muted-foreground">Plan {p.installments}x</div>}
                         {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.treatment}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{p.treatment}</TableCell>
                       <TableCell className="font-medium">{formatMAD(p.total)}</TableCell>
                       <TableCell className="min-w-32">
                         <div className="space-y-1">
@@ -492,7 +492,7 @@ function PaymentsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="font-semibold">{formatMAD(p.remaining)}</TableCell>
-                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{formatDate(p.dueDate)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatDate(p.dueDate)}</TableCell>
                       <TableCell><StatusBadge tone={paymentStatusTone(p.status)}>{paymentStatusLabel(p.status)}</StatusBadge></TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={() => sendReminder(p)}>

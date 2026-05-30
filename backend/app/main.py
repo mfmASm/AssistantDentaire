@@ -21,7 +21,7 @@ from app.core.config import get_settings
 
 config = get_settings()
 
-app = FastAPI(title="DentalPilot API", version="0.1.0")
+app = FastAPI(title="AssistantDentaire API", version="0.1.0")
 
 allowed_origins = [
     "http://localhost:5173",

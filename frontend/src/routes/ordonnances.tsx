@@ -71,7 +71,7 @@ function isPdfEngineUnavailable(error: unknown) {
 export const Route = createFileRoute("/ordonnances")({
   head: () => ({
     meta: [
-      { title: "Ordonnances - DentalPilot" },
+      { title: "Ordonnances - AssistantDentaire" },
       { name: "description", content: "Création, gestion, impression et envoi des ordonnances du cabinet." },
     ],
   }),
@@ -1040,7 +1040,7 @@ function OrdonnancesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Ordonnances"
-        description="Créez, gérez et envoyez les ordonnances de vos patients depuis DentalPilot."
+        description="Créez, gérez et envoyez les ordonnances de vos patients depuis AssistantDentaire."
         actions={
           <>
             <Button size="sm" onClick={() => openNew()}>

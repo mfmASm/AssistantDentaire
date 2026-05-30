@@ -59,7 +59,7 @@ def _document_html(title: str, cabinet: dict, patient: dict, body: str, referenc
         <div class="box">Signature du praticien</div>
         <div class="box">Cachet du cabinet</div>
       </section>
-      <footer>Document généré par DentalPilot. Validation médicale sous la responsabilité du dentiste.</footer>
+      <footer>Document généré par AssistantDentaire. Validation médicale sous la responsabilité du dentiste.</footer>
     </body>
     </html>
     """

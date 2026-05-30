@@ -1,4 +1,4 @@
-# DentalPilot
+# AssistantDentaire
 
 Private dental practice management app with a FastAPI backend and React/Vite frontend.
 

@@ -22,7 +22,7 @@ import { createReviewRequest, getReviews, markReviewSent, type ApiReviewRequest,
 export const Route = createFileRoute("/reviews")({
   head: () => ({
     meta: [
-      { title: "Avis Google - DentalPilot" },
+      { title: "Avis Google - AssistantDentaire" },
       { name: "description", content: "Automatisez vos demandes d'avis Google et suivez votre reputation en ligne." },
     ],
   }),
@@ -275,7 +275,7 @@ function ReviewsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Patient</TableHead>
-                  <TableHead className="hidden sm:table-cell">Visite</TableHead>
+                  <TableHead >Visite</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -298,7 +298,7 @@ function ReviewsPage() {
                       <div className="text-xs text-muted-foreground">{r.phone}</div>
                       {r.sentAt && <div className="text-xs text-muted-foreground">Envoye le {formatDate(r.sentAt)}</div>}
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{formatDate(r.visitDate)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatDate(r.visitDate)}</TableCell>
                     <TableCell><StatusBadge tone={reviewTone(r.status)}>{reviewLabel(r.status)}</StatusBadge></TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" onClick={() => sendReview(r.id)}>

@@ -9,11 +9,11 @@ interface PageHeaderProps {
 export function PageHeader({ title, description, actions }: PageHeaderProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="space-y-1">
+      <div className="min-w-0 space-y-1">
         <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        {description && <p className="text-sm text-muted-foreground break-words">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">{actions}</div>}
     </div>
   );
 }
@@ -43,10 +43,10 @@ export function StatCard({ label, value, hint, trend, trendTone = "neutral", ico
       style={{ boxShadow: "var(--shadow-card)" }}
     >
       <div className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-          <p className="mt-2 font-display text-2xl font-semibold tracking-tight">{value}</p>
-          {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+          <p className="mt-2 break-words font-display text-2xl font-semibold tracking-tight">{value}</p>
+          {hint && <p className="mt-1 break-words text-xs text-muted-foreground">{hint}</p>}
         </div>
         {icon && (
           <div className={`flex size-10 items-center justify-center rounded-xl ${accentMap[accent]}`}>{icon}</div>

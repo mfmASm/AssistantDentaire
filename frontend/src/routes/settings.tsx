@@ -23,7 +23,7 @@ import { teamApi, type TeamInvitePayload, type TeamMember } from "@/services/tea
 export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [
-      { title: "Parametres - DentalPilot" },
+      { title: "Parametres - AssistantDentaire" },
       { name: "description", content: "Configurez votre cabinet, vos modeles de message et les regles de rappel." },
     ],
   }),

@@ -108,7 +108,7 @@ const treatmentCatalog = [
 export const Route = createFileRoute("/appointments")({
   head: () => ({
     meta: [
-      { title: "Rendez-vous - DentalPilot" },
+      { title: "Rendez-vous - AssistantDentaire" },
       { name: "description", content: "Vue quotidienne des rendez-vous du cabinet dentaire avec statuts et actions rapides." },
     ],
   }),

@@ -24,7 +24,7 @@ import { createRecall, getRecalls, type ApiRecall, type RecallPayload } from "@/
 export const Route = createFileRoute("/recalls")({
   head: () => ({
     meta: [
-      { title: "Rappels patients - DentalPilot" },
+      { title: "Rappels patients - AssistantDentaire" },
       { name: "description", content: "Systeme de rappels intelligent : detartrages, controles, suivis orthodontiques et implants." },
     ],
   }),
@@ -413,7 +413,7 @@ function RecallsPage() {
 
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Type</TableHead><TableHead className="hidden md:table-cell">Derniere visite</TableHead><TableHead>Prochain rappel</TableHead><TableHead>Statut</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Type</TableHead><TableHead >Derniere visite</TableHead><TableHead>Prochain rappel</TableHead><TableHead>Statut</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {loading && (
                     <TableRow>
@@ -429,7 +429,7 @@ function RecallsPage() {
                     <TableRow key={r.id}>
                       <TableCell><div className="font-medium">{r.patient}</div><div className="text-xs text-muted-foreground">{r.phone}</div></TableCell>
                       <TableCell className="text-sm">{r.type}</TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{formatDate(r.lastVisit)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatDate(r.lastVisit)}</TableCell>
                       <TableCell className="text-sm font-medium">{formatDate(r.nextRecall)}</TableCell>
                       <TableCell><StatusBadge tone={recallTone(r.status)}>{recallLabel(r.status)}</StatusBadge></TableCell>
                       <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => sendRecall(r.id)}><MessageCircle className="size-4" /></Button></TableCell>

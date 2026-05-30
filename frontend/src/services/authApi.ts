@@ -19,7 +19,7 @@ export const authApi = {
   signIn: async (email: string, password: string) => {
     const session = await supabaseAuth.signIn(email, password);
     await authApi.onboard({
-      cabinet_name: "Cabinet DentalPilot",
+      cabinet_name: "Cabinet AssistantDentaire",
       full_name: email,
     });
     return session;
@@ -29,7 +29,7 @@ export const authApi = {
     const session = await supabaseAuth.signUp(email, password);
     if (session.access_token) {
       await authApi.onboard({
-        cabinet_name: "Cabinet DentalPilot",
+        cabinet_name: "Cabinet AssistantDentaire",
         full_name: email,
       });
     }
@@ -51,7 +51,7 @@ export const authApi = {
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         await authApi.onboard({
-          cabinet_name: "Cabinet DentalPilot",
+          cabinet_name: "Cabinet AssistantDentaire",
         });
         return authApi.me();
       }

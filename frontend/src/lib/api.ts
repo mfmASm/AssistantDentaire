@@ -65,7 +65,7 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
 
 export function withApiFallback<T>(request: Promise<T>, fallback: T): Promise<T> {
   return request.catch(() => {
-    console.warn("DentalPilot API unavailable, using mock fallback.");
+    console.warn("AssistantDentaire API unavailable, using mock fallback.");
     return fallback;
   });
 }

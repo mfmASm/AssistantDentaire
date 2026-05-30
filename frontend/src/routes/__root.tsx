@@ -73,8 +73,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "DentalPilot — Pilotez votre cabinet dentaire" },
-      { name: "description", content: "DentalPilot aide les cabinets dentaires à recouvrer les impayés, faire revenir les patients et obtenir plus d'avis Google depuis un seul tableau de bord." },
+      { title: "AssistantDentaire — Gestion intelligente des cabinets dentaires" },
+      { name: "description", content: "AssistantDentaire aide les cabinets dentaires à recouvrer les impayés, faire revenir les patients et obtenir plus d'avis Google depuis un seul tableau de bord." },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -237,7 +237,7 @@ function AppShell() {
 
   const userName = getUserName(currentUser);
   const userInitials = getUserInitials(userName);
-  const userEmail = currentUser?.email || "email@dentalpilot.ma";
+  const userEmail = currentUser?.email || "email@assistantdentaire.ma";
   const cabinetName = getCabinetName(currentUser);
   const roleLabel = getRoleLabel(currentUser?.role);
 
@@ -247,17 +247,17 @@ function AppShell() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
+      <div className="flex min-h-screen w-full overflow-x-hidden bg-background">
         <AppSidebar />
-        <div className="flex flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/80 px-3 backdrop-blur sm:px-6">
-            <SidebarTrigger />
+            <SidebarTrigger className="shrink-0" />
             <div className="relative hidden flex-1 max-w-md md:block">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Rechercher un patient, un paiement…" className="h-9 pl-9" />
             </div>
-            <div className="ml-auto flex items-center gap-2">
-              {demoMode && <Badge variant="secondary" className="bg-warning/20 text-warning-foreground">Mode démo</Badge>}
+            <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+              {demoMode && <Badge variant="secondary" className="max-w-[7rem] shrink truncate bg-warning/20 text-warning-foreground sm:max-w-none">Mode démo</Badge>}
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative" aria-label={`${notificationCount} notifications non lues`}>
@@ -296,7 +296,7 @@ function AppShell() {
               </Popover>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" className="flex h-8 max-w-[12rem] items-center gap-2 rounded-full border bg-card pl-1 pr-2.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <button type="button" className="flex h-8 max-w-[12rem] shrink-0 items-center gap-2 rounded-full border bg-card pl-1 pr-2.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">{userInitials}</div>
                     <span className="hidden truncate text-xs font-medium sm:inline">{userName}</span>
                     <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -330,7 +330,7 @@ function AppShell() {
               </DropdownMenu>
             </div>
           </header>
-          <main className="flex-1 p-4 sm:p-6 lg:p-8">
+          <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
             <Outlet />
           </main>
         </div>

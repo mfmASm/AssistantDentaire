@@ -59,7 +59,7 @@ function isPdfEngineUnavailable(error: unknown) {
 export const Route = createFileRoute("/certificats-medicaux")({
   head: () => ({
     meta: [
-      { title: "Certificats médicaux - DentalPilot" },
+      { title: "Certificats médicaux - AssistantDentaire" },
       { name: "description", content: "Création, gestion, impression et envoi des certificats médicaux du cabinet." },
     ],
   }),
@@ -721,7 +721,7 @@ function MedicalCertificatesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Certificats médicaux"
-        description="Créez, gérez et envoyez les certificats médicaux de vos patients depuis DentalPilot."
+        description="Créez, gérez et envoyez les certificats médicaux de vos patients depuis AssistantDentaire."
         actions={
           <>
             <Button size="sm" onClick={() => openNew()}>

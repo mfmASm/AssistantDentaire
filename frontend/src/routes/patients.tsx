@@ -25,7 +25,7 @@ import { patientsApi, toUiPatient, type PatientPayload, type PatientRecord } fro
 export const Route = createFileRoute("/patients")({
   head: () => ({
     meta: [
-      { title: "Patients - DentalPilot" },
+      { title: "Patients - AssistantDentaire" },
       { name: "description", content: "CRM patients du cabinet : profils, historique, suivi et statuts." },
     ],
   }),
@@ -351,10 +351,10 @@ function PatientsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Patient</TableHead>
-                  <TableHead className="hidden md:table-cell">Contact</TableHead>
-                  <TableHead className="hidden sm:table-cell">Derniere visite</TableHead>
+                  <TableHead >Contact</TableHead>
+                  <TableHead >Derniere visite</TableHead>
                   <TableHead>Statut</TableHead>
-                  <TableHead className="hidden lg:table-cell">Notes</TableHead>
+                  <TableHead >Notes</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -384,13 +384,13 @@ function PatientsPage() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground">
                       <div className="flex items-center gap-1.5"><Phone className="size-3" /> {p.phone}</div>
                       <div className="flex items-center gap-1.5"><Mail className="size-3" /> {p.email}</div>
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{formatDate(p.lastVisit)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatDate(p.lastVisit)}</TableCell>
                     <TableCell><StatusBadge tone={patientTone(p.status)}>{patientLabel(p.status)}</StatusBadge></TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{p.notes ?? "-"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{p.notes ?? "-"}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

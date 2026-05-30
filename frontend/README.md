@@ -1,4 +1,4 @@
-# DentalPilot Frontend
+# AssistantDentaire Frontend
 
 Existing React/Vite/Tailwind app. The visual design, page content, layout, cards, tables, and sidebar are kept unchanged.
 

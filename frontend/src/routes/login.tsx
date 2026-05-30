@@ -13,8 +13,8 @@ import { authApi } from "@/services/authApi";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Connexion - DentalPilot" },
-      { name: "description", content: "Accedez a votre tableau de bord DentalPilot pour piloter votre cabinet dentaire." },
+      { title: "Connexion - AssistantDentaire" },
+      { name: "description", content: "Accedez a votre tableau de bord AssistantDentaire pour piloter votre cabinet dentaire." },
     ],
   }),
   component: LoginPage,
@@ -130,13 +130,13 @@ function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="flex flex-col justify-between p-6 sm:p-10">
+    <div className="grid min-h-screen overflow-x-hidden lg:grid-cols-2">
+      <div className="flex min-w-0 flex-col justify-between gap-8 p-4 sm:p-10">
         <Link to="/" className="flex items-center gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-xl bg-[image:var(--gradient-primary)] text-primary-foreground">
             <Stethoscope className="size-5" />
           </div>
-          <span className="font-display text-lg font-semibold">DentalPilot</span>
+          <span className="font-display text-lg font-semibold">AssistantDentaire</span>
         </Link>
 
         <div className="mx-auto w-full max-w-sm space-y-6">
@@ -202,7 +202,7 @@ function LoginPage() {
           </p>
         </div>
 
-        <p className="text-xs text-muted-foreground">(c) 2026 DentalPilot - Casablanca, Maroc</p>
+        <p className="text-xs text-muted-foreground">(c) 2026 AssistantDentaire - Casablanca, Maroc</p>
       </div>
 
       <div className="relative hidden overflow-hidden bg-[image:var(--gradient-soft)] lg:block">
@@ -213,7 +213,7 @@ function LoginPage() {
               Pilotez votre cabinet, fidelisez vos patients.
             </h2>
             <p className="text-sm text-muted-foreground">
-              DentalPilot vous aide a recouvrer les impayes, faire revenir les patients, et collecter plus d'avis Google depuis un seul tableau de bord.
+              AssistantDentaire vous aide a recouvrer les impayes, faire revenir les patients, et collecter plus d'avis Google depuis un seul tableau de bord.
             </p>
           </div>
 
