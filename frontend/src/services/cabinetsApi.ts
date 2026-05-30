@@ -11,6 +11,7 @@ export type Cabinet = {
   google_review_link?: string | null;
   logo_url?: string | null;
   created_at?: string | null;
+  cabinet_setup_complete?: boolean;
 };
 
 export type CabinetUpdatePayload = Partial<Pick<

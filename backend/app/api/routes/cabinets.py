@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.core.security import AuthUser
 from app.core.supabase import get_supabase
+from app.core.cabinet_setup import cabinet_setup_complete
 
 router = APIRouter(prefix="/cabinets", tags=["cabinets"])
 
@@ -38,7 +39,8 @@ def _require_admin(current_user: AuthUser):
 
 @router.get("/me")
 def get_my_cabinet(current_user: AuthUser):
-    return get_supabase().table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
+    cabinet = get_supabase().table("cabinets").select("*").eq("id", current_user.cabinet_id).single().execute().data
+    return (cabinet or {}) | {"cabinet_setup_complete": cabinet_setup_complete(cabinet)}
 
 
 @router.put("/me")
@@ -59,4 +61,5 @@ def update_my_cabinet(payload: CabinetUpdate, current_user: AuthUser):
         .eq("id", current_user.cabinet_id)
         .execute()
     )
-    return response.data[0] if response.data else get_my_cabinet(current_user)
+    cabinet = response.data[0] if response.data else get_my_cabinet(current_user)
+    return cabinet | {"cabinet_setup_complete": cabinet_setup_complete(cabinet)}

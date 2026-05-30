@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 from app.core.security import AuthenticatedAuthUser, AuthUser
 from app.core.supabase import get_supabase
+from app.core.cabinet_setup import cabinet_setup_complete, clean_text
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -18,13 +19,6 @@ class OnboardPayload(BaseModel):
     full_name: str | None = None
 
 
-def _clean_text(value: str | None) -> str | None:
-    if not isinstance(value, str):
-        return None
-    value = value.strip()
-    return value or None
-
-
 @router.get("/me")
 def me(current_user: AuthUser):
     return {
@@ -34,6 +28,7 @@ def me(current_user: AuthUser):
         "role": current_user.role,
         "cabinet_id": current_user.cabinet_id,
         "cabinet": current_user.cabinet,
+        "cabinet_setup_complete": cabinet_setup_complete(current_user.cabinet),
     }
 
 
@@ -57,26 +52,26 @@ def onboard(payload: OnboardPayload, current_user: AuthenticatedAuthUser):
             )
         except Exception:
             cabinet = None
-        return {"cabinet": cabinet, "profile": existing_profile}
+        return {"cabinet": cabinet, "profile": existing_profile, "cabinet_setup_complete": cabinet_setup_complete(cabinet)}
 
-    cabinet_name = _clean_text(payload.cabinet_name) or "Nouveau cabinet"
-    dentist_name = _clean_text(payload.dentist_name) or _clean_text(payload.full_name) or current_user.email
+    cabinet_name = clean_text(payload.cabinet_name) or "Nouveau cabinet"
+    dentist_name = clean_text(payload.dentist_name) or ""
     cabinet = supabase.table("cabinets").insert(
         {
             "name": cabinet_name,
             "dentist_name": dentist_name,
-            "phone": _clean_text(payload.phone) or "",
-            "city": _clean_text(payload.city) or "",
-            "address": _clean_text(payload.address) or "",
-            "whatsapp_number": _clean_text(payload.whatsapp_number) or "",
-            "google_review_link": _clean_text(payload.google_review_link) or "",
+            "phone": clean_text(payload.phone) or "",
+            "city": clean_text(payload.city) or "",
+            "address": clean_text(payload.address) or "",
+            "whatsapp_number": clean_text(payload.whatsapp_number) or "",
+            "google_review_link": clean_text(payload.google_review_link) or "",
         }
     ).execute().data[0]
 
     profile_payload = {
         "id": current_user.id,
         "email": current_user.email,
-        "full_name": _clean_text(payload.full_name) or dentist_name or current_user.email,
+        "full_name": clean_text(payload.full_name) or current_user.email,
         "role": "admin",
         "cabinet_id": cabinet["id"],
     }
@@ -86,4 +81,4 @@ def onboard(payload: OnboardPayload, current_user: AuthenticatedAuthUser):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create profile")
 
     profile = profile_response.data[0]
-    return {"cabinet": cabinet, "profile": profile}
+    return {"cabinet": cabinet, "profile": profile, "cabinet_setup_complete": cabinet_setup_complete(cabinet)}

@@ -171,6 +171,9 @@ function AppShell() {
           setIsAuthorized(true);
           setIsCheckingAuth(false);
         }
+        if (active && !demoMode && !user.cabinet_setup_complete && pathname !== "/settings") {
+          router.navigate({ to: "/settings" });
+        }
       } catch {
         await authApi.logout();
         if (active) {
@@ -187,7 +190,18 @@ function AppShell() {
     return () => {
       active = false;
     };
-  }, [isAuthPage, isPublicPage, isAuthorized, pathname, router]);
+  }, [demoMode, isAuthPage, isPublicPage, isAuthorized, pathname, router]);
+
+  useEffect(() => {
+    if (isPublicPage) return;
+    const refreshCurrentUser = () => {
+      authApi.me()
+        .then(setCurrentUser)
+        .catch(() => undefined);
+    };
+    window.addEventListener("assistantdentaire-cabinet-updated", refreshCurrentUser);
+    return () => window.removeEventListener("assistantdentaire-cabinet-updated", refreshCurrentUser);
+  }, [isPublicPage]);
 
   useEffect(() => {
     const updateDemoMode = () => setDemoModeState(isDemoMode());
@@ -355,8 +369,8 @@ function getUserInitials(name: string) {
 
 function getCabinetName(user: AuthMe | null) {
   const cabinet = user?.cabinet;
-  if (cabinet && typeof cabinet === "object" && "name" in cabinet && typeof cabinet.name === "string") return cabinet.name;
-  return "Cabinet dentaire";
+  if (cabinet && typeof cabinet === "object" && "name" in cabinet && typeof cabinet.name === "string" && cabinet.name.trim()) return cabinet.name;
+  return "Nouveau cabinet";
 }
 
 function buildRealNotifications(summary: DashboardSummary): AppNotification[] {

@@ -58,6 +58,16 @@ const defaultClinic = {
   city: "Casablanca",
 };
 
+const blankClinic = {
+  name: "Nouveau cabinet",
+  dentist: "",
+  phone: "",
+  whatsapp: "",
+  reviewLink: "",
+  address: "",
+  city: "",
+};
+
 const defaultMessages = {
   appointment: "Bonjour [Patient], nous vous rappelons votre rendez-vous au cabinet prévu le [Date] à [Heure]. Merci de confirmer votre présence.",
   payment: "Bonjour [Patient], nous vous rappelons qu’un solde de [Montant] MAD reste à régler pour votre traitement: [Traitement]. Merci de nous contacter si besoin.",
@@ -102,13 +112,13 @@ const messagesFromTemplateValue = (value: unknown): MessageSettings => {
 };
 
 const cabinetToClinic = (cabinet: Cabinet): ClinicSettings => ({
-  name: cabinet.name || defaultClinic.name,
-  dentist: cabinet.dentist_name || defaultClinic.dentist,
-  phone: cabinet.phone || defaultClinic.phone,
-  whatsapp: cabinet.whatsapp_number || defaultClinic.whatsapp,
-  reviewLink: cabinet.google_review_link || defaultClinic.reviewLink,
-  address: cabinet.address || defaultClinic.address,
-  city: cabinet.city || defaultClinic.city,
+  name: cabinet.name || blankClinic.name,
+  dentist: cabinet.dentist_name || blankClinic.dentist,
+  phone: cabinet.phone || blankClinic.phone,
+  whatsapp: cabinet.whatsapp_number || blankClinic.whatsapp,
+  reviewLink: cabinet.google_review_link || blankClinic.reviewLink,
+  address: cabinet.address || blankClinic.address,
+  city: cabinet.city || blankClinic.city,
 });
 
 const getStoredSetting = <T,>(settings: SettingPayload[], key: string): T | undefined =>
@@ -127,7 +137,8 @@ function SettingsPage() {
     email: "",
     role: "secretary",
   });
-  const [clinic, setClinic] = useState<ClinicSettings>(defaultClinic);
+  const [clinic, setClinic] = useState<ClinicSettings>(blankClinic);
+  const [cabinetSetupComplete, setCabinetSetupComplete] = useState(true);
   const [messages, setMessages] = useState<MessageSettings>(defaultMessages);
   const [whatsappMode, setWhatsappMode] = useState("manual");
   const [rules, setRules] = useState(Object.fromEntries(recallRules.map((r) => [r.key, r.default])));
@@ -159,6 +170,7 @@ function SettingsPage() {
     setAutomations({ ...Object.fromEntries(automationDefaults.map((a) => [a.key, a.on])), ...stored.automations });
     setTeamMembers([]);
     setCurrentUser(null);
+    setCabinetSetupComplete(true);
   };
 
   const loadRealSettings = async () => {
@@ -166,6 +178,7 @@ function SettingsPage() {
     try {
       const user = await authApi.me();
       setCurrentUser(user);
+      setCabinetSetupComplete(Boolean(user.cabinet_setup_complete));
 
       const [cabinet, settings] = await Promise.all([
         getCurrentCabinet(),
@@ -176,6 +189,7 @@ function SettingsPage() {
       ]);
 
       setClinic(cabinetToClinic(cabinet));
+      setCabinetSetupComplete(Boolean(cabinet.cabinet_setup_complete));
       setMessages(messagesFromTemplateValue(getStoredSetting(settings, "whatsapp_templates")));
       setRules({
         ...Object.fromEntries(recallRules.map((r) => [r.key, r.default])),
@@ -244,6 +258,10 @@ function SettingsPage() {
         address: clinic.address,
         city: clinic.city,
       });
+      const refreshedUser = await authApi.me();
+      setCurrentUser(refreshedUser);
+      setCabinetSetupComplete(Boolean(refreshedUser.cabinet_setup_complete));
+      window.dispatchEvent(new Event("assistantdentaire-cabinet-updated"));
       toast.success("Paramètres du cabinet enregistrés avec succès.");
 
       await updateSetting("whatsapp_templates", templateValue(messages));
@@ -300,6 +318,12 @@ function SettingsPage() {
         description="Configurez votre cabinet et automatisez vos communications"
         actions={<Button size="sm" onClick={saveSettings} disabled={isSettingsLoading || isSavingSettings}>{isSavingSettings ? "Enregistrement..." : "Enregistrer"}</Button>}
       />
+
+      {!demoModeEnabled && !cabinetSetupComplete && (
+        <div className="rounded-md border bg-card px-4 py-3 text-sm text-muted-foreground">
+          Complétez les informations de votre cabinet pour finaliser la configuration.
+        </div>
+      )}
 
       <div className="space-y-4 lg:columns-2 lg:gap-4 lg:space-y-0">
         {canCurrentUserManageDemoMode && (

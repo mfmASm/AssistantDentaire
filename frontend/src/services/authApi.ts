@@ -8,11 +8,13 @@ export type AuthMe = {
   role: string;
   cabinet_id: string;
   cabinet?: Record<string, unknown> | null;
+  cabinet_setup_complete?: boolean;
 };
 
 export type OnboardResult = {
   cabinet: Record<string, unknown> | null;
   profile: Record<string, unknown>;
+  cabinet_setup_complete?: boolean;
 };
 
 export const authApi = {
