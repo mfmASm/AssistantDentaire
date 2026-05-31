@@ -32,6 +32,7 @@ import { getNotifications, type AppNotification } from "@/lib/notifications";
 import { getRoleLabel } from "@/lib/roles";
 import { DEMO_MODE_EVENT, isDemoMode } from "@/lib/demoMode";
 import { REMEMBER_SESSION_KEY, SAVED_EMAIL_KEY } from "@/lib/supabase";
+import { setWhatsAppCabinetContext } from "@/lib/whatsapp";
 import { authApi, type AuthMe } from "@/services/authApi";
 import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
@@ -167,6 +168,7 @@ function AppShell() {
         }
 
         const user = await authApi.ensureOnboarded();
+        syncWhatsAppCabinetContext(user);
         if (active) {
           setCurrentUser(user);
           setIsAuthorized(true);
@@ -241,6 +243,7 @@ function AppShell() {
   const handleLogout = async () => {
     const shouldKeepSavedEmail = window.localStorage.getItem(REMEMBER_SESSION_KEY) === "true";
     await authApi.logout();
+    setWhatsAppCabinetContext(null);
     if (!shouldKeepSavedEmail) {
       window.localStorage.removeItem(SAVED_EMAIL_KEY);
     }
@@ -352,6 +355,19 @@ function AppShell() {
       </div>
     </SidebarProvider>
   );
+}
+
+function syncWhatsAppCabinetContext(user: AuthMe | null) {
+  const cabinet = user?.cabinet;
+  if (!cabinet || typeof cabinet !== "object") {
+    setWhatsAppCabinetContext(null);
+    return;
+  }
+
+  setWhatsAppCabinetContext({
+    name: typeof cabinet.name === "string" ? cabinet.name : null,
+    googleReviewLink: typeof cabinet.google_review_link === "string" ? cabinet.google_review_link : null,
+  });
 }
 
 function getUserName(user: AuthMe | null) {

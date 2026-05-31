@@ -11,10 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { canManageCabinetSettings, canManageTeam, getRoleLabel } from "@/lib/roles";
 import { isDemoMode, setDemoMode } from "@/lib/demoMode";
+import { setWhatsAppCabinetContext } from "@/lib/whatsapp";
 import { authApi, type AuthMe } from "@/services/authApi";
 import { getCurrentCabinet, updateCurrentCabinet, type Cabinet } from "@/services/cabinetsApi";
 import { getSettings, updateSetting, type SettingPayload } from "@/services/settingsApi";
@@ -189,6 +189,7 @@ function SettingsPage() {
       ]);
 
       setClinic(cabinetToClinic(cabinet));
+      setWhatsAppCabinetContext({ name: cabinet.name, googleReviewLink: cabinet.google_review_link });
       setCabinetSetupComplete(Boolean(cabinet.cabinet_setup_complete));
       setMessages(messagesFromTemplateValue(getStoredSetting(settings, "whatsapp_templates")));
       setRules({
@@ -259,6 +260,14 @@ function SettingsPage() {
         city: clinic.city,
       });
       const refreshedUser = await authApi.me();
+      if (refreshedUser.cabinet && typeof refreshedUser.cabinet === "object") {
+        setWhatsAppCabinetContext({
+          name: typeof refreshedUser.cabinet.name === "string" ? refreshedUser.cabinet.name : clinic.name,
+          googleReviewLink: typeof refreshedUser.cabinet.google_review_link === "string" ? refreshedUser.cabinet.google_review_link : clinic.reviewLink,
+        });
+      } else {
+        setWhatsAppCabinetContext({ name: clinic.name, googleReviewLink: clinic.reviewLink });
+      }
       setCurrentUser(refreshedUser);
       setCabinetSetupComplete(Boolean(refreshedUser.cabinet_setup_complete));
       window.dispatchEvent(new Event("assistantdentaire-cabinet-updated"));
@@ -315,7 +324,7 @@ function SettingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Parametres"
-        description="Configurez votre cabinet et automatisez vos communications"
+        description="Configurez votre cabinet et vos communications"
         actions={<Button size="sm" onClick={saveSettings} disabled={isSettingsLoading || isSavingSettings}>{isSavingSettings ? "Enregistrement..." : "Enregistrer"}</Button>}
       />
 
@@ -433,8 +442,7 @@ function SettingsPage() {
               <Select value={whatsappMode} onValueChange={setWhatsappMode}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="manual">Manuel via WhatsApp Web</SelectItem>
-                  <SelectItem value="cloud" disabled>Automatique via WhatsApp Cloud API bientôt disponible</SelectItem>
+                  <SelectItem value="manual">Envoi manuel via WhatsApp Web</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -444,21 +452,6 @@ function SettingsPage() {
             <MessageInput label="Rappel patient" value={messages.recall} onChange={(recall) => setMessages((m) => ({ ...m, recall }))} />
             <MessageInput label="Ordonnance" value={messages.prescription} onChange={(prescription) => setMessages((m) => ({ ...m, prescription }))} />
             <MessageInput label="Certificat médical" value={messages.certificate} onChange={(certificate) => setMessages((m) => ({ ...m, certificate }))} />
-          </CardContent>
-        </Card>
-
-        <Card className="mb-4 break-inside-avoid">
-          <CardHeader>
-            <CardTitle>Automatisation WhatsApp Cloud API</CardTitle>
-            <CardDescription>
-              L’envoi automatique des messages, des PDFs, le suivi livré/lu et la réception des réponses patients seront disponibles via WhatsApp Cloud API dans une prochaine version.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <SettingInput label="Phone Number ID" value="Bientôt disponible" onChange={() => undefined} disabled />
-            <SettingInput label="Access Token" value="Bientôt disponible" onChange={() => undefined} disabled />
-            <SettingInput label="Webhook URL" value="Bientôt disponible" onChange={() => undefined} disabled />
-            <SettingInput label="Verify Token" value="Bientôt disponible" onChange={() => undefined} disabled />
           </CardContent>
         </Card>
 
@@ -483,20 +476,6 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="mb-4 break-inside-avoid">
-          <CardHeader><CardTitle>Automatisations</CardTitle><CardDescription>Activez les envois automatiques</CardDescription></CardHeader>
-          <CardContent className="space-y-1">
-            {automationDefaults.map((a, i) => (
-              <div key={a.key}>
-                <div className="flex items-center justify-between py-2.5">
-                  <Label className="font-normal">{a.label}</Label>
-                  <Switch checked={automations[a.key]} onCheckedChange={(checked) => setAutomations((current) => ({ ...current, [a.key]: checked }))} />
-                </div>
-                {i < automationDefaults.length - 1 && <Separator />}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
       </div>
 
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>

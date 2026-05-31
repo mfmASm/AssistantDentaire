@@ -20,7 +20,7 @@ import { StatusBadge, apptTone, apptLabel, paymentTone, paymentLabel } from "@/c
 import { formatDate, type AppointmentStatus, type PaymentStatus } from "@/lib/demo-data";
 import { todayISO, formatLongDate } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoAppointments, demoPatients, isDemoMode } from "@/lib/demoMode";
-import { logAndOpenWhatsapp } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
 import { appointmentsApi, type ApiAppointment, type AppointmentPayload } from "@/services/appointmentsApi";
 import { patientsApi, toUiPatient, type PatientRecord } from "@/services/patientsApi";
 
@@ -401,7 +401,11 @@ function AppointmentsPage() {
       toast.error("Numéro WhatsApp du patient manquant.");
       return;
     }
-    const message = `Bonjour ${appointment.patient}, nous vous contactons concernant votre rendez-vous au Cabinet Atlas - Casablanca. Merci de nous confirmer votre disponibilité.`;
+    const message = fillWhatsAppTemplate(whatsappTemplates.appointment, {
+      Patient: appointment.patient,
+      Date: formatDate(appointment.date),
+      Heure: appointment.time,
+    });
     logAndOpenWhatsapp({ patientId: appointment.patientId, type: "appointment_reminder", phone: appointment.phone, message });
   };
 

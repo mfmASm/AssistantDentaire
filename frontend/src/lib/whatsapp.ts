@@ -4,24 +4,60 @@ import { isDemoMode } from "@/lib/demoMode";
 import { createWhatsappLog } from "@/services/whatsappLogsApi";
 
 type TemplateParams = Record<string, string | number | undefined>;
+type CabinetTemplateContext = {
+  name?: string | null;
+  googleReviewLink?: string | null;
+};
+
+const CABINET_TEMPLATE_CONTEXT_KEY = "assistantdentaire-whatsapp-cabinet-context";
 
 export const whatsappTemplates = {
   appointment:
-    "Bonjour [Patient], nous vous rappelons votre rendez-vous au Cabinet Atlas - Casablanca prévu le [Date] à [Heure]. Merci de confirmer votre présence. À bientôt.",
+    "Bonjour [Patient], nous vous rappelons votre rendez-vous au [Cabinet] prevu le [Date] a [Heure]. Merci de confirmer votre presence. A bientot.",
   payment:
-    "Bonjour [Patient], nous vous rappelons qu'un solde de [Montant] MAD reste à régler pour votre traitement: [Traitement]. Merci de nous contacter si besoin. Cabinet Atlas - Casablanca.",
+    "Bonjour [Patient], nous vous rappelons qu'un solde de [Montant] MAD reste a regler pour votre traitement: [Traitement]. Merci de nous contacter si besoin. [Cabinet].",
   review:
-    "Bonjour [Patient], merci pour votre visite au Cabinet Atlas - Casablanca. Votre avis nous aide beaucoup. Vous pouvez laisser un avis ici: [Google Review Link]. Merci beaucoup.",
+    "Bonjour [Patient], merci pour votre visite au [Cabinet]. Votre avis nous aide beaucoup. Vous pouvez laisser un avis ici: [Google Review Link]. Merci beaucoup.",
   recall:
-    "Bonjour [Patient], votre rappel de suivi dentaire est prévu pour [Type de rappel]. Nous vous invitons à contacter le cabinet pour planifier votre visite. Cabinet Atlas - Casablanca.",
+    "Bonjour [Patient], votre rappel de suivi dentaire est prevu pour [Type de rappel]. Nous vous invitons a contacter le cabinet pour planifier votre visite. [Cabinet].",
   prescription:
-    "Bonjour [Patient], votre ordonnance est prête. Le message WhatsApp est préparé, veuillez joindre le PDF téléchargé avant l'envoi. Cabinet Atlas - Casablanca.",
+    "Bonjour [Patient], votre ordonnance est prete. Le message WhatsApp est prepare, veuillez joindre le PDF telecharge avant l'envoi. [Cabinet].",
   certificate:
-    "Bonjour [Patient], votre certificat médical est prêt. Le message WhatsApp est préparé, veuillez joindre le PDF téléchargé avant l'envoi. Cabinet Atlas - Casablanca.",
+    "Bonjour [Patient], votre certificat medical est pret. Le message WhatsApp est prepare, veuillez joindre le PDF telecharge avant l'envoi. [Cabinet].",
+};
+
+export const setWhatsAppCabinetContext = (context: CabinetTemplateContext | null | undefined) => {
+  if (typeof window === "undefined") return;
+
+  if (!context) {
+    window.localStorage.removeItem(CABINET_TEMPLATE_CONTEXT_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(CABINET_TEMPLATE_CONTEXT_KEY, JSON.stringify(context));
+};
+
+export const getWhatsAppCabinetContext = (): CabinetTemplateContext => {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(CABINET_TEMPLATE_CONTEXT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+const defaultTemplateParams = (): TemplateParams => {
+  const context = getWhatsAppCabinetContext();
+  return {
+    Cabinet: context.name?.trim() || "votre cabinet dentaire",
+    "Google Review Link": context.googleReviewLink?.trim() || "",
+  };
 };
 
 export const fillWhatsAppTemplate = (template: string, params: TemplateParams) =>
-  Object.entries(params).reduce(
+  Object.entries({ ...defaultTemplateParams(), ...params }).reduce(
     (message, [key, value]) => message.replaceAll(`[${key}]`, String(value ?? "")),
     template,
   );
@@ -50,7 +86,7 @@ export const openWhatsAppMessage = (phone?: string, message?: string) => {
   const text = (message ?? "").trim();
 
   if (!formattedPhone) {
-    toast.error("Numéro WhatsApp du patient manquant.");
+    toast.error("Numero WhatsApp du patient manquant.");
     return false;
   }
 
@@ -60,7 +96,7 @@ export const openWhatsAppMessage = (phone?: string, message?: string) => {
   }
 
   window.open(buildWhatsappUrl(formattedPhone, text), "_blank", "noopener,noreferrer");
-  toast.success("Message WhatsApp préparé.");
+  toast.success("Message WhatsApp prepare.");
   return true;
 };
 

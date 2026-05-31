@@ -14,8 +14,9 @@ import { StatusBadge, reviewTone, reviewLabel } from "@/components/status-badge"
 import { formatDate, type ReviewRequest, type ReviewStatus } from "@/lib/demo-data";
 import { todayISO } from "@/lib/date-utils";
 import { DEMO_MODE_EVENT, demoPatients, demoReviews, isDemoMode } from "@/lib/demoMode";
-import { fillWhatsAppTemplate, logAndOpenWhatsapp, whatsappTemplates } from "@/lib/whatsapp";
+import { fillWhatsAppTemplate, getWhatsAppCabinetContext, logAndOpenWhatsapp, setWhatsAppCabinetContext, whatsappTemplates } from "@/lib/whatsapp";
 import { appointmentsApi, type ApiAppointment } from "@/services/appointmentsApi";
+import { getCurrentCabinet } from "@/services/cabinetsApi";
 import { patientsApi, type ApiPatient } from "@/services/patientsApi";
 import { createReviewRequest, getReviews, markReviewSent, type ApiReviewRequest, type ReviewPayload } from "@/services/reviewsApi";
 
@@ -74,18 +75,23 @@ function ReviewsPage() {
   const [reviews, setReviews] = useState<ApiReviewRequest[]>([]);
   const [appointments, setAppointments] = useState<ApiAppointment[]>([]);
   const [loading, setLoading] = useState(false);
-  const [reviewLink, setReviewLink] = useState("https://g.page/r/cabinet-atlas-casablanca/review");
+  const [reviewLink, setReviewLink] = useState(() => getWhatsAppCabinetContext().googleReviewLink || "");
   const [template, setTemplate] = useState(whatsappTemplates.review);
   const sent = rows.filter((r) => r.status !== "not_sent").length;
   const received = rows.filter((r) => r.status === "reviewed").length;
   const rate = sent > 0 ? Math.round((received / sent) * 100) : 0;
 
   const refreshRealReviews = async () => {
-    const [reviewsResponse, patientsResponse, appointmentsResponse] = await Promise.all([
+    const [reviewsResponse, patientsResponse, appointmentsResponse, cabinet] = await Promise.all([
       getReviews(),
       patientsApi.list(),
       appointmentsApi.getAppointments().catch(() => [] as ApiAppointment[]),
+      getCurrentCabinet().catch(() => null),
     ]);
+    if (cabinet) {
+      setWhatsAppCabinetContext({ name: cabinet.name, googleReviewLink: cabinet.google_review_link });
+      setReviewLink(cabinet.google_review_link || "");
+    }
     const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
     const appointmentsById = Object.fromEntries(appointmentsResponse.map((appointment) => [appointment.id, appointment]));
     setPatients(patientsResponse);
@@ -99,6 +105,7 @@ function ReviewsPage() {
 
     if (demoMode) {
       setLoading(false);
+      setReviewLink("https://g.page/r/cabinet-atlas-casablanca/review");
       setPatients(demoPatients);
       setReviews([]);
       setAppointments([]);
@@ -109,9 +116,13 @@ function ReviewsPage() {
     }
 
     setLoading(true);
-    Promise.all([getReviews(), patientsApi.list(), appointmentsApi.getAppointments().catch(() => [] as ApiAppointment[])])
-      .then(([reviewsResponse, patientsResponse, appointmentsResponse]) => {
+    Promise.all([getReviews(), patientsApi.list(), appointmentsApi.getAppointments().catch(() => [] as ApiAppointment[]), getCurrentCabinet().catch(() => null)])
+      .then(([reviewsResponse, patientsResponse, appointmentsResponse, cabinet]) => {
         if (!active) return;
+        if (cabinet) {
+          setWhatsAppCabinetContext({ name: cabinet.name, googleReviewLink: cabinet.google_review_link });
+          setReviewLink(cabinet.google_review_link || "");
+        }
         const patientsById = Object.fromEntries(patientsResponse.map((patient) => [patient.id, patient]));
         const appointmentsById = Object.fromEntries(appointmentsResponse.map((appointment) => [appointment.id, appointment]));
         setPatients(patientsResponse);

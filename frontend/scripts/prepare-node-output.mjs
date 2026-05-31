@@ -44,6 +44,47 @@ const contentTypes = new Map([
   [".webp", "image/webp"],
 ]);
 
+function originFromEnv(value) {
+  if (!value) return "";
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+const connectSrc = uniqueValues([
+  "'self'",
+  originFromEnv(process.env.VITE_API_URL),
+  originFromEnv(process.env.VITE_SUPABASE_URL),
+  "https://*.supabase.co",
+  "wss://*.supabase.co",
+  "https://*.onrender.com",
+]);
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https:",
+  \`connect-src \${connectSrc.join(" ")}\`,
+  "navigate-to 'self' https://wa.me https://api.whatsapp.com",
+].join("; ");
+
+function applySecurityHeaders(res) {
+  res.setHeader("content-security-policy", contentSecurityPolicy);
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+}
+
 function toPublicPath(url) {
   const pathname = decodeURIComponent(new URL(url, "http://localhost").pathname);
   const candidate = normalize(join(publicDir, pathname));
@@ -57,6 +98,7 @@ function serveStatic(req, res) {
   const filePath = toPublicPath(req.url || "/");
   if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) return false;
 
+  applySecurityHeaders(res);
   const contentType = contentTypes.get(extname(filePath));
   if (contentType) res.setHeader("content-type", contentType);
   res.setHeader("cache-control", filePath.includes(\`\${sep}assets\${sep}\`) ? "public, max-age=31536000, immutable" : "public, max-age=300");
@@ -88,7 +130,11 @@ createServer(async (req, res) => {
     const request = new Request(\`http://\${req.headers.host || "localhost"}\${req.url || "/"}\`, requestInit);
 
     const response = await serverBuild.fetch(request, process.env, {});
-    res.writeHead(response.status, response.statusText, Object.fromEntries(response.headers));
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.set("content-security-policy", contentSecurityPolicy);
+    responseHeaders.set("x-content-type-options", "nosniff");
+    responseHeaders.set("referrer-policy", "strict-origin-when-cross-origin");
+    res.writeHead(response.status, response.statusText, Object.fromEntries(responseHeaders));
 
     if (!response.body || req.method === "HEAD") {
       res.end();

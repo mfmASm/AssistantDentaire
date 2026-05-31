@@ -353,7 +353,6 @@ function Dashboard() {
   const sendReviewRequest = (request: (typeof reviews)[number]) => {
     const message = fillWhatsAppTemplate(whatsappTemplates.review, {
       Patient: request.patient,
-      "Google Review Link": "https://g.page/r/cabinet-atlas-casablanca/review",
     });
     logAndOpenWhatsapp({ patientId: request.patientId, type: "review_request", phone: request.phone, message });
   };
