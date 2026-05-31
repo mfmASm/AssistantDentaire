@@ -147,8 +147,8 @@ function LoginPage() {
 
         <div className="mx-auto w-full max-w-sm space-y-6">
           <div className="space-y-2">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">Bon retour</h1>
-            <p className="text-sm text-muted-foreground">Connectez-vous pour piloter votre cabinet dentaire.</p>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Connectez-vous à votre cabinet</h1>
+            <p className="text-sm text-muted-foreground">Accédez à votre espace pour gérer vos patients, vos rendez-vous et vos suivis.</p>
           </div>
 
           <form onSubmit={onSubmit} className="space-y-4">
