@@ -59,6 +59,7 @@ function uniqueValues(values) {
 
 const connectSrc = uniqueValues([
   "'self'",
+  "https://dentalpilot-api.onrender.com",
   originFromEnv(process.env.VITE_API_URL),
   originFromEnv(process.env.VITE_SUPABASE_URL),
   "https://*.supabase.co",
@@ -70,7 +71,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
-  "frame-ancestors 'self'",
+  "frame-ancestors 'none'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",

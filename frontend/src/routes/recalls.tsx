@@ -65,10 +65,15 @@ const statusOptions: { value: RecallStatus; label: string; api: string }[] = [
 ];
 
 const normalizeRecallStatus = (status?: string): RecallStatus => {
-  if (status === "Planifié" || status === "Planifie" || status === "Prévu" || status === "Prevu" || status === "scheduled") return "scheduled";
-  if (status === "Bientôt" || status === "Bientot" || status === "due_soon") return "due_soon";
-  if (status === "En retard" || status === "overdue") return "overdue";
-  if (status === "Terminé" || status === "Termine" || status === "completed") return "completed";
+  const normalized = (status || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "planifie" || normalized === "prevu" || normalized === "scheduled") return "scheduled";
+  if (normalized === "bientot" || normalized === "due_soon") return "due_soon";
+  if (normalized === "en retard" || normalized === "overdue") return "overdue";
+  if (normalized === "termine" || normalized === "terminee" || normalized === "completed" || normalized === "complete") return "completed";
   return "scheduled";
 };
 
@@ -86,6 +91,7 @@ const toDemoRows = (): Recall[] =>
       lastVisit: todayISO(),
       nextRecall: recall.nextRecall,
       status: normalizeRecallStatus(recall.status),
+      completedAt: normalizeRecallStatus(recall.status) === "completed" ? todayISO() : undefined,
     };
   });
 
@@ -100,8 +106,14 @@ const toRecallRow = (recall: ApiRecall, patientsById: Record<string, ApiPatient>
     lastVisit: recall.last_visit_date || recall.created_at?.slice(0, 10) || todayISO(),
     nextRecall: recall.next_recall_date,
     status: normalizeRecallStatus(recall.status),
+    completedAt: recall.completed_at?.slice(0, 10) || recall.updated_at?.slice(0, 10) || recall.created_at?.slice(0, 10),
   };
 };
+
+const currentMonth = () => todayISO().slice(0, 7);
+
+const completedThisMonth = (recall: Recall) =>
+  recall.status === "completed" && (recall.completedAt || recall.nextRecall || recall.lastVisit).startsWith(currentMonth());
 
 const emptyForm = () => ({
   patientId: "",
@@ -390,7 +402,7 @@ function RecallsPage() {
         <StatCard label="Planifies" value={String(rows.filter((r) => r.status === "scheduled").length)} icon={<BellRing className="size-5" />} accent="info" />
         <StatCard label="Bientot dus" value={String(rows.filter((r) => r.status === "due_soon").length)} icon={<Clock className="size-5" />} accent="warning" />
         <StatCard label="En retard" value={String(rows.filter((r) => r.status === "overdue").length)} icon={<AlertTriangle className="size-5" />} accent="danger" />
-        <StatCard label="Termines ce mois" value={String(rows.filter((r) => r.status === "completed").length)} icon={<CheckCircle2 className="size-5" />} accent="success" />
+        <StatCard label="Termines ce mois" value={String(rows.filter(completedThisMonth).length)} icon={<CheckCircle2 className="size-5" />} accent="success" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

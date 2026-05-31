@@ -14,6 +14,8 @@ export type RecallPayload = {
 export type ApiRecall = RecallPayload & {
   id: string;
   created_at?: string;
+  updated_at?: string;
+  completed_at?: string;
 };
 
 export const getRecalls = () => apiFetch<ApiRecall[]>("/recalls");

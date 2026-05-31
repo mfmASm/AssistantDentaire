@@ -51,11 +51,20 @@ def dashboard_summary(current_user: AuthUser):
     prescriptions = query("prescriptions", "*, patients(id, full_name, phone)")
     certificates = query("medical_certificates", "*, patients(id, full_name, phone)")
 
-    appointments_today = [row for row in appointments if row.get("appointment_date") == today]
+    def is_cancelled_or_no_show(row: dict[str, Any]) -> bool:
+        return norm(row.get("status")) in {"annule", "cancelled", "canceled", "no-show", "no show"}
+
+    def is_completed(row: dict[str, Any]) -> bool:
+        return norm(row.get("status")) in {"termine", "completed"}
+
+    appointments_today_all = [row for row in appointments if row.get("appointment_date") == today]
+    appointments_today = [row for row in appointments_today_all if not is_cancelled_or_no_show(row)]
+    appointments_today_completed = [row for row in appointments_today if is_completed(row)]
+    appointments_today_upcoming = [row for row in appointments_today if not is_completed(row)]
     upcoming_appointments_all = [
         row
         for row in appointments
-        if str(row.get("appointment_date") or "") >= today and norm(row.get("status")) not in {"annule", "cancelled", "canceled"}
+        if str(row.get("appointment_date") or "") >= today and not is_cancelled_or_no_show(row)
     ]
     unpaid_payments = [row for row in payments if amount(row.get("remaining_amount")) > 0]
     overdue_payments_all = [row for row in unpaid_payments if row.get("due_date") and str(row["due_date"]) < today]
@@ -74,6 +83,7 @@ def dashboard_summary(current_user: AuthUser):
         upcoming_appointments_all,
         key=lambda row: (str(row.get("appointment_date") or ""), str(row.get("start_time") or "")),
     )[:5]
+    appointments_today_sorted = sorted(appointments_today, key=lambda row: str(row.get("start_time") or ""))
     overdue_payments = sorted(overdue_payments_all, key=lambda row: str(row.get("due_date") or ""))[:5]
     due_recalls = sorted(due_recalls_all, key=lambda row: str(row.get("next_recall_date") or ""))[:5]
 
@@ -102,6 +112,8 @@ def dashboard_summary(current_user: AuthUser):
 
     return {
         "appointments_today_count": len(appointments_today),
+        "appointments_today_completed_count": len(appointments_today_completed),
+        "appointments_today_upcoming_count": len(appointments_today_upcoming),
         "upcoming_appointments_count": len(upcoming_appointments_all),
         "patients_total": len(patients),
         "new_patients_this_month": len([row for row in patients if starts_with(row.get("created_at"), month)]),
@@ -137,6 +149,20 @@ def dashboard_summary(current_user: AuthUser):
                 "follow_up_status": row.get("follow_up_status"),
             }
             for row in upcoming_appointments
+        ],
+        "appointments_today": [
+            {
+                "id": row.get("id"),
+                "patient_id": row.get("patient_id"),
+                "patient_name": patient_name(row),
+                "appointment_date": row.get("appointment_date"),
+                "start_time": row.get("start_time"),
+                "treatment_type": row.get("treatment_type"),
+                "status": row.get("status"),
+                "payment_status": row.get("payment_status"),
+                "follow_up_status": row.get("follow_up_status"),
+            }
+            for row in appointments_today_sorted
         ],
         "overdue_payments": [
             {

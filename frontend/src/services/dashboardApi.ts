@@ -49,6 +49,8 @@ export type DashboardActivity = {
 
 export type DashboardSummary = {
   appointments_today_count: number;
+  appointments_today_completed_count?: number;
+  appointments_today_upcoming_count?: number;
   upcoming_appointments_count: number;
   patients_total: number;
   new_patients_this_month: number;
@@ -62,6 +64,7 @@ export type DashboardSummary = {
   prescriptions_today_count: number;
   certificates_today_count: number;
   recent_patients: DashboardPatient[];
+  appointments_today?: DashboardAppointment[];
   upcoming_appointments: DashboardAppointment[];
   overdue_payments: DashboardPayment[];
   due_recalls: DashboardRecall[];
@@ -70,6 +73,8 @@ export type DashboardSummary = {
 
 const fallback: DashboardSummary = {
   appointments_today_count: 0,
+  appointments_today_completed_count: 0,
+  appointments_today_upcoming_count: 0,
   upcoming_appointments_count: 0,
   patients_total: 0,
   new_patients_this_month: 0,
@@ -83,6 +88,7 @@ const fallback: DashboardSummary = {
   prescriptions_today_count: 0,
   certificates_today_count: 0,
   recent_patients: [],
+  appointments_today: [],
   upcoming_appointments: [],
   overdue_payments: [],
   due_recalls: [],

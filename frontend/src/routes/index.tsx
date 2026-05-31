@@ -244,11 +244,15 @@ function Dashboard() {
   const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
 
   const patients = demoMode ? demoPatients.map(toDashboardPatient) : summary.recent_patients.map(toRealDashboardPatient);
+  const todaySummaryAppointments = summary.appointments_today ?? [];
   const appointments = demoMode ? demoAppointments.map(toDashboardAppointment) : summary.upcoming_appointments.map(toRealDashboardAppointment);
+  const realTodayAppointments = todaySummaryAppointments.map(toRealDashboardAppointment);
   const payments = demoMode ? demoPayments.map(toDashboardPayment) : summary.overdue_payments.map(toRealDashboardPayment);
   const recalls = demoMode ? demoRecalls.map(toDashboardRecall) : summary.due_recalls.map(toRealDashboardRecall);
   const reviews = demoMode ? demoReviews.map(toDashboardReview) : [];
-  const todayAppts = demoMode ? appointments : appointments.filter((appointment) => summary.upcoming_appointments.find((item) => item.id === appointment.id)?.appointment_date === todayISO());
+  const todayAppts = demoMode
+    ? appointments.filter((appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show")
+    : realTodayAppointments;
   const unpaid = payments.filter((p) => p.status !== "paid");
   const todayCollected = payments
     .filter((p) => p.dueDate <= todayISO() && p.status === "paid")
@@ -258,8 +262,8 @@ function Dashboard() {
   const toSendReviews = reviews.filter((r) => r.status === "not_sent");
   const followUps = appointments.filter((a) => a.followUp);
   const appointmentsTodayCount = demoMode ? todayAppts.length : summary.appointments_today_count;
-  const completedTodayCount = demoMode ? todayAppts.filter((a) => a.status === "completed").length : 0;
-  const confirmedTodayCount = demoMode ? todayAppts.filter((a) => a.status === "confirmed").length : summary.upcoming_appointments_count;
+  const completedTodayCount = demoMode ? todayAppts.filter((a) => a.status === "completed").length : summary.appointments_today_completed_count ?? todayAppts.filter((a) => a.status === "completed").length;
+  const confirmedTodayCount = demoMode ? todayAppts.filter((a) => a.status !== "completed" && a.status !== "cancelled" && a.status !== "no_show").length : summary.appointments_today_upcoming_count ?? todayAppts.filter((a) => a.status !== "completed").length;
   const collectedToday = demoMode ? todayCollected : summary.payments_collected_today;
   const collectedMonth = demoMode ? monthRevenue : summary.payments_collected_month;
   const unpaidTotal = demoMode ? unpaid.reduce((s, p) => s + (p.total - p.paid), 0) : summary.unpaid_balances_total;

@@ -39,6 +39,7 @@ export interface Recall {
   lastVisit: string;
   nextRecall: string;
   status: RecallStatus;
+  completedAt?: string;
 }
 
 export interface ReviewRequest {
