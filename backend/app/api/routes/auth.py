@@ -19,6 +19,17 @@ class OnboardPayload(BaseModel):
     full_name: str | None = None
 
 
+NEW_CABINET_DEFAULTS = {
+    "name": "Nouveau cabinet",
+    "dentist_name": None,
+    "phone": None,
+    "city": None,
+    "address": None,
+    "whatsapp_number": None,
+    "google_review_link": None,
+}
+
+
 @router.get("/me")
 def me(current_user: AuthUser):
     return {
@@ -54,19 +65,7 @@ def onboard(payload: OnboardPayload, current_user: AuthenticatedAuthUser):
             cabinet = None
         return {"cabinet": cabinet, "profile": existing_profile, "cabinet_setup_complete": cabinet_setup_complete(cabinet)}
 
-    cabinet_name = clean_text(payload.cabinet_name) or "Nouveau cabinet"
-    dentist_name = clean_text(payload.dentist_name) or ""
-    cabinet = supabase.table("cabinets").insert(
-        {
-            "name": cabinet_name,
-            "dentist_name": dentist_name,
-            "phone": clean_text(payload.phone) or "",
-            "city": clean_text(payload.city) or "",
-            "address": clean_text(payload.address) or "",
-            "whatsapp_number": clean_text(payload.whatsapp_number) or "",
-            "google_review_link": clean_text(payload.google_review_link) or "",
-        }
-    ).execute().data[0]
+    cabinet = supabase.table("cabinets").insert(NEW_CABINET_DEFAULTS).execute().data[0]
 
     profile_payload = {
         "id": current_user.id,

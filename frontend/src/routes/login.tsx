@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isDemoMode } from "@/lib/demoMode";
 import { REMEMBER_SESSION_KEY, SAVED_EMAIL_KEY, SupabaseAuthError } from "@/lib/supabase";
-import { authApi } from "@/services/authApi";
+import { authApi, type AuthMe } from "@/services/authApi";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -42,8 +43,8 @@ function LoginPage() {
       .then(async (session) => {
         if (!session?.access_token) return;
         try {
-          await authApi.ensureOnboarded();
-          if (active) navigate({ to: "/" });
+          const user = await authApi.ensureOnboarded();
+          if (active) navigateAfterAuth(user);
         } catch {
           await authApi.logout();
         }
@@ -62,9 +63,10 @@ function LoginPage() {
     try {
       saveRememberPreference();
       await authApi.signIn(email, password);
+      const user = await authApi.me();
       saveEmailPreference();
       toast.success("Connexion reussie");
-      navigate({ to: "/" });
+      navigateAfterAuth(user);
     } catch (error) {
       toast.error(getFriendlyAuthError(error, "login"));
     } finally {
@@ -80,8 +82,9 @@ function LoginPage() {
       const session = await authApi.signUp(email, password);
       saveEmailPreference();
       if (session.access_token) {
+        const user = await authApi.me();
         toast.success("Essai gratuit cree. Vous pouvez continuer.");
-        navigate({ to: "/" });
+        navigateAfterAuth(user);
       } else {
         toast.success("Compte cree. Verifiez votre email avant de vous connecter.");
       }
@@ -128,6 +131,10 @@ function LoginPage() {
     } else {
       window.localStorage.removeItem(SAVED_EMAIL_KEY);
     }
+  };
+
+  const navigateAfterAuth = (user: AuthMe) => {
+    navigate({ to: !isDemoMode() && !user.cabinet_setup_complete ? "/settings" : "/" });
   };
 
   return (

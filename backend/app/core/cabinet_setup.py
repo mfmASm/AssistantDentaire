@@ -13,7 +13,6 @@ def cabinet_setup_complete(cabinet: dict | None) -> bool:
         name if name != "Nouveau cabinet" else None,
         clean_text(cabinet.get("dentist_name")),
         clean_text(cabinet.get("phone")),
-        clean_text(cabinet.get("whatsapp_number")),
         clean_text(cabinet.get("city")),
         clean_text(cabinet.get("address")),
     ]
