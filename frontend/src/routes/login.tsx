@@ -209,7 +209,6 @@ function LoginPage() {
         </div>
 
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <BrandMark className="size-4 bg-none text-muted-foreground [&_svg]:size-3.5" />
           <span>© 2026 AssistantDentaire - Solution pour cabinets dentaires. Tous droits réservés.</span>
         </p>
       </div>
