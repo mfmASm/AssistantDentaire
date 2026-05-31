@@ -17,6 +17,7 @@ import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as PatientsRouteImport } from './routes/patients'
 import { Route as OrdonnancesRouteImport } from './routes/ordonnances'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CertificatsMedicauxRouteImport } from './routes/certificats-medicaux'
 import { Route as AppointmentsRouteImport } from './routes/appointments'
 import { Route as IndexRouteImport } from './routes/index'
@@ -61,6 +62,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CertificatsMedicauxRoute = CertificatsMedicauxRouteImport.update({
   id: '/certificats-medicaux',
   path: '/certificats-medicaux',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/appointments': typeof AppointmentsRoute
   '/certificats-medicaux': typeof CertificatsMedicauxRoute
+  '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/ordonnances': typeof OrdonnancesRoute
   '/patients': typeof PatientsRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/appointments': typeof AppointmentsRoute
   '/certificats-medicaux': typeof CertificatsMedicauxRoute
+  '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/ordonnances': typeof OrdonnancesRoute
   '/patients': typeof PatientsRoute
@@ -108,6 +116,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/appointments': typeof AppointmentsRoute
   '/certificats-medicaux': typeof CertificatsMedicauxRoute
+  '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/ordonnances': typeof OrdonnancesRoute
   '/patients': typeof PatientsRoute
@@ -123,6 +132,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appointments'
     | '/certificats-medicaux'
+    | '/dashboard'
     | '/login'
     | '/ordonnances'
     | '/patients'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appointments'
     | '/certificats-medicaux'
+    | '/dashboard'
     | '/login'
     | '/ordonnances'
     | '/patients'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appointments'
     | '/certificats-medicaux'
+    | '/dashboard'
     | '/login'
     | '/ordonnances'
     | '/patients'
@@ -163,6 +175,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppointmentsRoute: typeof AppointmentsRoute
   CertificatsMedicauxRoute: typeof CertificatsMedicauxRoute
+  DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   OrdonnancesRoute: typeof OrdonnancesRoute
   PatientsRoute: typeof PatientsRoute
@@ -231,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/certificats-medicaux': {
       id: '/certificats-medicaux'
       path: '/certificats-medicaux'
@@ -259,6 +279,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppointmentsRoute: AppointmentsRoute,
   CertificatsMedicauxRoute: CertificatsMedicauxRoute,
+  DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   OrdonnancesRoute: OrdonnancesRoute,
   PatientsRoute: PatientsRoute,

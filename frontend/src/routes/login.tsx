@@ -22,7 +22,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-function LoginPage() {
+export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -134,7 +134,7 @@ function LoginPage() {
   };
 
   const navigateAfterAuth = (user: AuthMe) => {
-    navigate({ to: !isDemoMode() && !user.cabinet_setup_complete ? "/settings" : "/" });
+    navigate({ to: !isDemoMode() && !user.cabinet_setup_complete ? "/settings" : "/dashboard" });
   };
 
   return (

@@ -103,7 +103,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function AppShell() {
   const router = useRouter();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const isAuthPage = pathname === "/login";
+  const isAuthPage = pathname === "/" || pathname === "/login";
   const isPublicPage = isAuthPage || pathname === "/sitemap.xml";
   const demoNotifications = useMemo(() => getNotifications(), []);
   const [realNotifications, setRealNotifications] = useState<AppNotification[]>([]);

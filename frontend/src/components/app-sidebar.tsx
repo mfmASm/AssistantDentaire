@@ -29,7 +29,7 @@ import { getRoleLabel } from "@/lib/roles";
 import type { AuthMe } from "@/services/authApi";
 
 const nav = [
-  { title: "Tableau de bord", url: "/", icon: LayoutDashboard },
+  { title: "Tableau de bord", url: "/dashboard", icon: LayoutDashboard },
   { title: "Rendez-vous", url: "/appointments", icon: CalendarDays },
   { title: "Patients", url: "/patients", icon: Users },
   { title: "Paiements", url: "/payments", icon: Wallet },
