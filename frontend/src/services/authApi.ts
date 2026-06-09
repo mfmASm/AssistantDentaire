@@ -1,6 +1,8 @@
 import { ApiError, apiFetch, jsonBody } from "@/services/api";
 import { supabaseAuth } from "@/lib/supabase";
 
+export const AUTH_ME_QUERY_KEY = ["auth", "me"] as const;
+
 export type AuthMe = {
   id: string;
   email?: string;
@@ -17,20 +19,22 @@ export type OnboardResult = {
   cabinet_setup_complete?: boolean;
 };
 
-export const authApi = {
-  signIn: async (email: string, password: string) => {
-    const session = await supabaseAuth.signIn(email, password);
-    await authApi.ensureOnboarded();
-    return session;
-  },
+function authMeFromOnboard(result: OnboardResult, email?: string): AuthMe {
+  return {
+    id: String(result.profile.id || ""),
+    email: typeof result.profile.email === "string" ? result.profile.email : email,
+    full_name: typeof result.profile.full_name === "string" ? result.profile.full_name : undefined,
+    role: typeof result.profile.role === "string" ? result.profile.role : "admin",
+    cabinet_id: typeof result.profile.cabinet_id === "string" ? result.profile.cabinet_id : "",
+    cabinet: result.cabinet,
+    cabinet_setup_complete: result.cabinet_setup_complete,
+  };
+}
 
-  signUp: async (email: string, password: string) => {
-    const session = await supabaseAuth.signUp(email, password);
-    if (session.access_token) {
-      await authApi.ensureOnboarded();
-    }
-    return session;
-  },
+export const authApi = {
+  signIn: (email: string, password: string) => supabaseAuth.signIn(email, password),
+
+  signUp: (email: string, password: string) => supabaseAuth.signUp(email, password),
 
   logout: () => supabaseAuth.signOut(),
 
@@ -47,8 +51,8 @@ export const authApi = {
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         const session = await authApi.session();
-        await authApi.onboard({ full_name: session?.user?.email });
-        return authApi.me();
+        const result = await authApi.onboard({ full_name: session?.user?.email });
+        return authMeFromOnboard(result, session?.user?.email);
       }
       throw error;
     }

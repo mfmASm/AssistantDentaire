@@ -1,6 +1,7 @@
 import { supabaseAuth } from "@/lib/supabase";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_TIMEOUT_MS = 20_000;
 
 type ApiOptions = RequestInit & {
   token?: string | null;
@@ -29,10 +30,24 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  const controller = options.signal ? null : new AbortController();
+  const timeoutId = controller ? globalThis.setTimeout(() => controller.abort(), API_TIMEOUT_MS) : undefined;
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller?.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError(0, "Request timed out", "request_timeout");
+    }
+    throw error;
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const text = await response.text();

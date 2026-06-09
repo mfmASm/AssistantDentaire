@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
   Outlet,
@@ -33,8 +33,8 @@ import { getRoleLabel } from "@/lib/roles";
 import { DEMO_MODE_EVENT, isDemoMode } from "@/lib/demoMode";
 import { REMEMBER_SESSION_KEY, SAVED_EMAIL_KEY } from "@/lib/supabase";
 import { setWhatsAppCabinetContext } from "@/lib/whatsapp";
-import { authApi, type AuthMe } from "@/services/authApi";
-import { getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
+import { AUTH_ME_QUERY_KEY, authApi, type AuthMe } from "@/services/authApi";
+import { DASHBOARD_SUMMARY_QUERY_KEY, getDashboardSummary, type DashboardSummary } from "@/services/dashboardApi";
 
 function NotFoundComponent() {
   return (
@@ -102,42 +102,35 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function AppShell() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const isAuthPage = pathname === "/" || pathname === "/login";
   const isPublicPage = isAuthPage || pathname === "/sitemap.xml";
   const demoNotifications = useMemo(() => getNotifications(), []);
-  const [realNotifications, setRealNotifications] = useState<AppNotification[]>([]);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [loadingLabel, setLoadingLabel] = useState("Chargement de votre espace…");
+  const [showServerInitMessage, setShowServerInitMessage] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthMe | null>(null);
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
 
-  useEffect(() => {
-    if (demoMode || !isAuthorized || isPublicPage) {
-      setRealNotifications([]);
-      return;
-    }
-
-    let active = true;
-    getDashboardSummary()
-      .then((summary) => {
-        if (active) setRealNotifications(buildRealNotifications(summary));
-      })
-      .catch(() => {
-        if (active) setRealNotifications([]);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [demoMode, isAuthorized, isPublicPage]);
+  const dashboardSummaryQuery = useQuery({
+    queryKey: DASHBOARD_SUMMARY_QUERY_KEY,
+    queryFn: getDashboardSummary,
+    enabled: !demoMode && isAuthorized && !isPublicPage,
+    staleTime: 30_000,
+    retry: 1,
+  });
 
   useEffect(() => {
     let active = true;
 
     const checkAuth = async () => {
-      if (active && !isAuthorized) setIsCheckingAuth(true);
+      if (active) {
+        setLoadingLabel("Chargement de votre espace…");
+        setIsCheckingAuth(true);
+      }
       try {
         const session = await authApi.session();
 
@@ -163,11 +156,15 @@ function AppShell() {
             setIsAuthorized(false);
             setIsCheckingAuth(false);
           }
+          queryClient.removeQueries({ queryKey: AUTH_ME_QUERY_KEY });
+          queryClient.removeQueries({ queryKey: DASHBOARD_SUMMARY_QUERY_KEY });
           router.navigate({ to: "/login" });
           return;
         }
 
-        const user = await authApi.ensureOnboarded();
+        const cachedUser = queryClient.getQueryData<AuthMe>(AUTH_ME_QUERY_KEY);
+        const user = cachedUser ?? await authApi.ensureOnboarded();
+        queryClient.setQueryData(AUTH_ME_QUERY_KEY, user);
         syncWhatsAppCabinetContext(user);
         if (active) {
           setCurrentUser(user);
@@ -179,6 +176,8 @@ function AppShell() {
         }
       } catch {
         await authApi.logout();
+        queryClient.removeQueries({ queryKey: AUTH_ME_QUERY_KEY });
+        queryClient.removeQueries({ queryKey: DASHBOARD_SUMMARY_QUERY_KEY });
         if (active) {
           setCurrentUser(null);
           setIsAuthorized(false);
@@ -193,18 +192,31 @@ function AppShell() {
     return () => {
       active = false;
     };
-  }, [demoMode, isAuthPage, isPublicPage, isAuthorized, pathname, router]);
+  }, [demoMode, isAuthPage, isPublicPage, pathname, queryClient, router]);
+
+  useEffect(() => {
+    if (!isCheckingAuth || isPublicPage) {
+      setShowServerInitMessage(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setShowServerInitMessage(true), 4_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [isCheckingAuth, isPublicPage]);
 
   useEffect(() => {
     if (isPublicPage) return;
     const refreshCurrentUser = () => {
       authApi.me()
-        .then(setCurrentUser)
+        .then((user) => {
+          queryClient.setQueryData(AUTH_ME_QUERY_KEY, user);
+          setCurrentUser(user);
+        })
         .catch(() => undefined);
     };
     window.addEventListener("assistantdentaire-cabinet-updated", refreshCurrentUser);
     return () => window.removeEventListener("assistantdentaire-cabinet-updated", refreshCurrentUser);
-  }, [isPublicPage]);
+  }, [isPublicPage, queryClient]);
 
   useEffect(() => {
     const updateDemoMode = () => setDemoModeState(isDemoMode());
@@ -225,6 +237,7 @@ function AppShell() {
     }
   }, []);
 
+  const realNotifications = dashboardSummaryQuery.data ? buildRealNotifications(dashboardSummaryQuery.data) : [];
   const notifications = demoMode ? demoNotifications : realNotifications;
   const unreadNotifications = notifications.filter((notification) => !readNotificationIds.includes(notification.id));
   const notificationCount = unreadNotifications.length;
@@ -243,6 +256,8 @@ function AppShell() {
   const handleLogout = async () => {
     const shouldKeepSavedEmail = window.localStorage.getItem(REMEMBER_SESSION_KEY) === "true";
     await authApi.logout();
+    queryClient.removeQueries({ queryKey: AUTH_ME_QUERY_KEY });
+    queryClient.removeQueries({ queryKey: DASHBOARD_SUMMARY_QUERY_KEY });
     setWhatsAppCabinetContext(null);
     if (!shouldKeepSavedEmail) {
       window.localStorage.removeItem(SAVED_EMAIL_KEY);
@@ -260,8 +275,8 @@ function AppShell() {
   const roleLabel = getRoleLabel(currentUser?.role);
 
   if (isAuthPage) return <Outlet />;
-  if (!isPublicPage && isCheckingAuth) return <div className="p-6 text-sm text-muted-foreground">Chargement...</div>;
-  if (!isPublicPage && !isAuthorized) return <div className="p-6 text-sm text-muted-foreground">Chargement...</div>;
+  if (!isPublicPage && isCheckingAuth) return <LoadingState label={loadingLabel} showServerInitMessage={showServerInitMessage} />;
+  if (!isPublicPage && !isAuthorized) return <LoadingState label="Chargement de votre espace…" showServerInitMessage={showServerInitMessage} />;
 
   return (
     <SidebarProvider>
@@ -354,6 +369,17 @@ function AppShell() {
         </div>
       </div>
     </SidebarProvider>
+  );
+}
+
+function LoadingState({ label, showServerInitMessage }: { label: string; showServerInitMessage: boolean }) {
+  return (
+    <div className="p-6 text-sm text-muted-foreground">
+      <p>{label}</p>
+      {showServerInitMessage && (
+        <p className="mt-2">Initialisation du serveur, cela peut prendre quelques secondes…</p>
+      )}
+    </div>
   );
 }
 

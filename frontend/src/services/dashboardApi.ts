@@ -1,5 +1,7 @@
 import { apiFetch, withApiFallback } from "@/services/api";
 
+export const DASHBOARD_SUMMARY_QUERY_KEY = ["dashboard", "summary"] as const;
+
 export type DashboardPatient = {
   id: string;
   full_name?: string | null;

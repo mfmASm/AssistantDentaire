@@ -3,6 +3,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SESSION_KEY = "dentalpilot-supabase-session";
 const ACCESS_TOKEN_KEY = "dentalpilot-access-token";
 const REFRESH_TOKEN_KEY = "dentalpilot-refresh-token";
+const AUTH_TIMEOUT_MS = 15_000;
 export const REMEMBER_SESSION_KEY = "dentaflow_remember_session";
 export const SAVED_EMAIL_KEY = "dentaflow_saved_email";
 
@@ -92,11 +93,25 @@ export function clearSupabaseSession() {
 
 async function authRequest<T>(path: string, payload: unknown, token?: string): Promise<T> {
   assertSupabaseConfig();
-  const response = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
-    method: "POST",
-    headers: authHeaders(token),
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  let response: Response;
+
+  try {
+    response = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new SupabaseAuthError(0, "Authentication timed out.", null, "auth_timeout");
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const text = await response.text();

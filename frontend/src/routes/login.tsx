@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, ShieldCheck, Wallet, Star } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { isDemoMode } from "@/lib/demoMode";
 import { REMEMBER_SESSION_KEY, SAVED_EMAIL_KEY, SupabaseAuthError } from "@/lib/supabase";
-import { authApi, type AuthMe } from "@/services/authApi";
+import { AUTH_ME_QUERY_KEY, authApi, type AuthMe } from "@/services/authApi";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -24,11 +25,14 @@ export const Route = createFileRoute("/login")({
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberSession, setRememberSession] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Connexion en cours…");
+  const [showServerInitMessage, setShowServerInitMessage] = useState(false);
   const loginButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -43,10 +47,15 @@ export function LoginPage() {
       .then(async (session) => {
         if (!session?.access_token) return;
         try {
+          setIsSubmitting(true);
+          setLoadingLabel("Chargement de votre espace…");
           const user = await authApi.ensureOnboarded();
+          queryClient.setQueryData(AUTH_ME_QUERY_KEY, user);
           if (active) navigateAfterAuth(user);
         } catch {
           await authApi.logout();
+        } finally {
+          if (active) setIsSubmitting(false);
         }
       })
       .catch(() => undefined);
@@ -54,7 +63,17 @@ export function LoginPage() {
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [navigate, queryClient]);
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setShowServerInitMessage(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setShowServerInitMessage(true), 4_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [isSubmitting]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -62,9 +81,13 @@ export function LoginPage() {
     setIsSubmitting(true);
     try {
       saveRememberPreference();
+      setLoadingLabel("Connexion en cours…");
       await authApi.signIn(email, password);
-      const user = await authApi.me();
+      setLoadingLabel("Préparation de votre cabinet…");
+      const user = await authApi.ensureOnboarded();
+      queryClient.setQueryData(AUTH_ME_QUERY_KEY, user);
       saveEmailPreference();
+      setLoadingLabel("Chargement de votre espace…");
       toast.success("Connexion reussie");
       navigateAfterAuth(user);
     } catch (error) {
@@ -79,10 +102,14 @@ export function LoginPage() {
     setIsSubmitting(true);
     try {
       saveRememberPreference();
+      setLoadingLabel("Connexion en cours…");
       const session = await authApi.signUp(email, password);
       saveEmailPreference();
       if (session.access_token) {
-        const user = await authApi.me();
+        setLoadingLabel("Préparation de votre cabinet…");
+        const user = await authApi.ensureOnboarded();
+        queryClient.setQueryData(AUTH_ME_QUERY_KEY, user);
+        setLoadingLabel("Chargement de votre espace…");
         toast.success("Essai gratuit cree. Vous pouvez continuer.");
         navigateAfterAuth(user);
       } else {
@@ -197,8 +224,14 @@ export function LoginPage() {
                 <p className="text-xs text-muted-foreground">Recommandé sur votre ordinateur personnel uniquement.</p>
               </div>
             </div>
-            <Button ref={loginButtonRef} type="submit" className="w-full" disabled={isSubmitting}>Se connecter</Button>
+            <Button ref={loginButtonRef} type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? loadingLabel : "Se connecter"}
+            </Button>
           </form>
+
+          {isSubmitting && showServerInitMessage && (
+            <p className="text-center text-xs text-muted-foreground">Initialisation du serveur, cela peut prendre quelques secondes…</p>
+          )}
 
           <p className="text-center text-xs text-muted-foreground">
             Nouveau cabinet ?{" "}
@@ -249,7 +282,7 @@ export function LoginPage() {
 }
 
 function getFriendlyAuthError(error: unknown, mode: "login" | "signup") {
-  if (isMissingSupabaseEnvError(error)) return "Configuration Supabase manquante.";
+  if (isMissingSupabaseEnvError(error) || isTimeoutError(error)) return "Service momentanément indisponible. Veuillez réessayer.";
   if (isInvalidEmailError(error)) return "Veuillez saisir une adresse email valide.";
   if (isWeakPasswordError(error)) return "Le mot de passe doit contenir au moins 6 caractères.";
   if (isExistingUserError(error)) return "Un compte existe déjà avec cet email. Veuillez vous connecter.";
@@ -267,6 +300,11 @@ function getAuthErrorText(error: unknown) {
 
 function isMissingSupabaseEnvError(error: unknown) {
   return error instanceof SupabaseAuthError && error.errorCode === "missing_supabase_env";
+}
+
+function isTimeoutError(error: unknown) {
+  const text = getAuthErrorText(error);
+  return text.includes("auth_timeout") || text.includes("request_timeout") || text.includes("timed out");
 }
 
 function isExistingUserError(error: unknown) {
